@@ -1,0 +1,13 @@
+[package]
+name = "core-tt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+small-bit-vec = { path = "../small-bit-vec" }
+arbitrary = { version = "*", optional = true }
+num = "0.4.3"
+
+[features]
+arbitrary = ["dep:arbitrary"]
+
