@@ -1,7 +1,15 @@
 use crate::priv_prelude::*;
 
-impl<'a> Arbitrary<'a> for Ctx {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Ctx> {
+// FIXME: hack to prevent stack overflows until they're fixed.
+const MAX_DEPTH: usize = 10;
+
+impl<'a, S> Arbitrary<'a> for Ctx<S>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Ctx<S>> {
         let depth = u.len() / 8;
         arbitrary_ctx_with_depth(depth, u)
     }
@@ -17,114 +25,121 @@ impl<'a> Arbitrary<'a> for Ctx {
     */
 }
 
-impl<'a> Arbitrary<'a> for Ty {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Ty> {
+impl<'a, S> Arbitrary<'a> for Ty<S>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Ty<S>> {
         let depth = u.len() / 7;
         let ctx = arbitrary_ctx_with_depth(depth.saturating_sub(2), u)?;
         arbitrary_ty_under_ctx_with_depth(&ctx, depth.saturating_sub(2), u)
     }
-
-    /*
-    fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        Self::try_size_hint(depth).unwrap_or_default()
-    }
-
-    fn try_size_hint(_depth: usize) -> Result<(usize, Option<usize>), MaxRecursionReached> {
-        todo!()
-    }
-    */
 }
 
-impl<'a> Arbitrary<'a> for Tm {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Tm> {
+impl<'a, S> Arbitrary<'a> for Tm<S>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Tm<S>> {
         let depth = u.len() / 8;
         let ctx = arbitrary_ctx_with_depth(depth.saturating_sub(2), u)?;
         arbitrary_term_under_ctx_with_depth(&ctx, depth.saturating_sub(2), u)
     }
-
-    /*
-    fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        Self::try_size_hint(depth).unwrap_or_default()
-    }
-
-    fn try_size_hint(_depth: usize) -> Result<(usize, Option<usize>), MaxRecursionReached> {
-        todo!()
-    }
-    */
 }
 
-impl<'a> Arbitrary<'a> for Stuck {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Stuck> {
+impl<'a, S> Arbitrary<'a> for Stuck<S>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Stuck<S>> {
         let depth = u.len() / 8;
         let ctx = arbitrary_ctx_with_depth(depth.saturating_sub(2), u)?;
         arbitrary_stuck_under_ctx_with_depth(&ctx, depth.saturating_sub(2), u)
     }
-
-    /*
-    fn size_hint(depth: usize) -> (usize, Option<usize>) {
-        Self::try_size_hint(depth).unwrap_or_default()
-    }
-
-    fn try_size_hint(_depth: usize) -> Result<(usize, Option<usize>), MaxRecursionReached> {
-        todo!()
-    }
-    */
 }
 
-/*
-impl<'a, T: Contextual + Arbitrary<'a>> Arbitrary<'a> for Scope<T> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Stuck> {
-        let var_ty: Ty = u.arbitrary()?;
-        var_ty.scope(|var_term| 
-        let ctx = arbitrary_ctx_with_depth(depth.saturating_sub(2), u)?;
-        arbitrary_stuck_under_ctx_with_depth(&ctx, depth.saturating_sub(2), u)
-    }
-}
-*/
-
-pub fn arbitrary_ctx<'a>(
+pub fn arbitrary_ctx<'a, S>(
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Ctx> {
+) -> arbitrary::Result<Ctx<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
     let depth = u.len() / 8;
     arbitrary_ctx_with_depth(depth, u)
 }
 
-pub fn arbitrary_ty_under_ctx<'a>(
-    ctx: &Ctx,
+pub fn arbitrary_ty_under_ctx<'a, S>(
+    ctx: &Ctx<S>,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Ty> {
+) -> arbitrary::Result<Ty<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
     let depth = u.len() / 5;
     arbitrary_ty_under_ctx_with_depth(&ctx, depth, u)
 }
 
-pub fn arbitrary_term_under_ctx<'a>(
-    ctx: &Ctx,
+pub fn arbitrary_term_under_ctx<'a, S>(
+    ctx: &Ctx<S>,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Tm> {
+) -> arbitrary::Result<Tm<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
     let depth = u.len() / 6;
     arbitrary_term_under_ctx_with_depth(&ctx, depth, u)
 }
 
-pub fn arbitrary_term_of_ty<'a>(
-    ty: &Ty,
+pub fn arbitrary_term_of_ty<'a, S>(
+    ty: &Ty<S>,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Tm> {
+) -> arbitrary::Result<Tm<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
     let depth = u.len() / 3;
     arbitrary_term_of_ty_with_depth(&ty, depth, u)
 }
 
-pub fn arbitrary_stuck_under_ctx<'a>(
-    ctx: &Ctx,
+pub fn arbitrary_stuck_under_ctx<'a, S>(
+    ctx: &Ctx<S>,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Stuck> {
+) -> arbitrary::Result<Stuck<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
     let depth = u.len() / 4;
     arbitrary_stuck_under_ctx_with_depth(&ctx, depth, u)
 }
 
-fn arbitrary_ctx_with_depth<'a>(
+fn arbitrary_ctx_with_depth<'a, S>(
     depth: usize,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Ctx> {
+) -> arbitrary::Result<Ctx<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    // hack. prevent stack overflows until they're fixed.
+    let depth = std::cmp::min(depth, MAX_DEPTH);
+
     if u.ratio(1, 1 + depth / 2)? {
         Ok(Ctx::root())
     } else {
@@ -134,16 +149,28 @@ fn arbitrary_ctx_with_depth<'a>(
     }
 }
 
-fn arbitrary_ty_under_ctx_with_depth<'a>(
-    ctx: &Ctx,
+fn arbitrary_ty_under_ctx_with_depth<'a, S>(
+    ctx: &Ctx<S>,
     depth: usize,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Ty> {
-    let mut choices: Vec<Box<dyn Fn(&mut Unstructured<'a>) -> arbitrary::Result<Ty>>>  = Vec::new();
+) -> arbitrary::Result<Ty<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    // hack. prevent stack overflows until they're fixed.
+    let depth = std::cmp::min(depth, MAX_DEPTH);
+
+    let mut choices: Vec<Box<dyn Fn(&mut Unstructured<'a>) -> arbitrary::Result<Ty<S>>>>  = Vec::new();
     choices.push(Box::new(move |_u| Ok(ctx.universe())));
     choices.push(Box::new(move |_u| Ok(ctx.nat())));
     choices.push(Box::new(move |_u| Ok(ctx.never())));
     choices.push(Box::new(move |_u| Ok(ctx.unit_ty())));
+    choices.push(Box::new(move |u| {
+        let user_ty = u.arbitrary()?;
+        Ok(ctx.user_ty(&user_ty))
+    }));
     if let Some(depth) = depth.checked_sub(2) {
         choices.push(Box::new(move |u| {
             let mut eq_term_0 = arbitrary_term_under_ctx_with_depth(ctx, depth, u)?;
@@ -160,12 +187,16 @@ fn arbitrary_ty_under_ctx_with_depth<'a>(
         }));
         choices.push(Box::new(move |u| {
             let head_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
-            let tail_ty = head_ty.try_scope(|head_term| arbitrary_ty_under_ctx_with_depth(&head_term.ctx(), depth, u))?;
+            let tail_ty = head_ty.try_scope(|head_term| {
+                arbitrary_ty_under_ctx_with_depth(&head_term.ctx(), depth, u)
+            })?;
             Ok(head_ty.sigma(tail_ty.unbind()))
         }));
         choices.push(Box::new(move |u| {
             let arg_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
-            let res_ty = arg_ty.try_scope(|arg_term| arbitrary_ty_under_ctx_with_depth(&arg_term.ctx(), depth, u))?;
+            let res_ty = arg_ty.try_scope(|arg_term| {
+                arbitrary_ty_under_ctx_with_depth(&arg_term.ctx(), depth, u)
+            })?;
             Ok(arg_ty.pi(res_ty.unbind()))
         }));
     }
@@ -174,14 +205,25 @@ fn arbitrary_ty_under_ctx_with_depth<'a>(
     choice(u)
 }
 
-fn arbitrary_term_under_ctx_with_depth<'a>(
-    ctx: &Ctx,
+fn arbitrary_term_under_ctx_with_depth<'a, S>(
+    ctx: &Ctx<S>,
     depth: usize,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Tm> {
-    //let depth = u.len().next_power_of_two().checked_ilog2().unwrap();
-    let mut choices: Vec<Box<dyn Fn(&mut Unstructured<'a>) -> arbitrary::Result<Tm>>>  = Vec::new();
+) -> arbitrary::Result<Tm<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    // hack. prevent stack overflows until they're fixed.
+    let depth = std::cmp::min(depth, MAX_DEPTH);
+
+    let mut choices: Vec<Box<dyn Fn(&mut Unstructured<'a>) -> arbitrary::Result<Tm<S>>>>  = Vec::new();
     choices.push(Box::new(move |_u| Ok(ctx.unit_term())));
+    choices.push(Box::new(move |u| {
+        let user_term = u.arbitrary()?;
+        Ok(ctx.user_term(&user_term))
+    }));
     if let Some(depth) = depth.checked_sub(1) {
         for _ in 0..ctx.len() {
             choices.push(Box::new(move |u| {
@@ -231,11 +273,19 @@ fn arbitrary_term_under_ctx_with_depth<'a>(
     choice(u)
 }
 
-fn arbitrary_term_of_ty_with_depth<'a>(
-    ty: &Ty,
+fn arbitrary_term_of_ty_with_depth<'a, S>(
+    ty: &Ty<S>,
     depth: usize,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Tm> {
+) -> arbitrary::Result<Tm<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    // hack. prevent stack overflows until they're fixed.
+    let depth = std::cmp::min(depth, MAX_DEPTH);
+
     let mut valid_indices = Vec::new();
     for index in 0..ty.ctx().len() {
         let var_ty = ty.ctx().get_ty(index);
@@ -247,43 +297,78 @@ fn arbitrary_term_of_ty_with_depth<'a>(
     let index = u.choose_index(valid_indices.len() + 1)?;
     match valid_indices.get(index) {
         Some(index) => {
-            Ok(ty.ctx().var(*index).to_term())
+            Ok(ty.ctx().var(*index))
         },
         None => {
             let term_opt = match ty.kind() {
                 TyKind::Stuck { .. } => None,
+                TyKind::User { .. } => None,
                 TyKind::Universe => {
-                    let ty = arbitrary_ty_under_ctx_with_depth(&ty.ctx(), depth, u)?;
-                    Some(ty.to_term())
+                    if let Some(depth) = depth.checked_sub(1) {
+                        let ty = arbitrary_ty_under_ctx_with_depth(&ty.ctx(), depth, u)?;
+                        Some(ty.to_term())
+                    } else {
+                        None
+                    }
                 },
-                TyKind::Nat => None, // TODO
+                TyKind::Nat => {
+                    match depth.checked_sub(1) {
+                        None => Some(ty.ctx().zero()),
+                        Some(depth) => {
+                            if u.arbitrary()? {
+                                Some(ty.ctx().zero())
+                            } else {
+                                let pred_term = arbitrary_term_of_ty_with_depth(&ty, depth / 2, u)?;
+                                Some(pred_term.succs(&NonZeroBigUint::one()))
+                            }
+                        },
+                    }
+                },
                 TyKind::Equal { eq_term_0, eq_term_1 } => {
                     as_equal(eq_term_0, eq_term_1).map(|eq_term| eq_term.refl())
                 },
                 TyKind::Never => None,
                 TyKind::Unit => Some(ty.ctx().unit_term()),
                 TyKind::Sum { lhs_ty, rhs_ty } => {
-                    if u.arbitrary()? {
-                        Some(arbitrary_term_of_ty_with_depth(&lhs_ty, depth, u)?.inj_lhs(&rhs_ty))
+                    if let Some(depth) = depth.checked_sub(1) {
+                        if u.arbitrary()? {
+                            Some(
+                                arbitrary_term_of_ty_with_depth(&lhs_ty, depth, u)?
+                                .inj_lhs(&rhs_ty)
+                            )
+                        } else {
+                            Some(
+                                arbitrary_term_of_ty_with_depth(&rhs_ty, depth, u)?
+                                .inj_rhs(&lhs_ty)
+                            )
+                        }
                     } else {
-                        Some(arbitrary_term_of_ty_with_depth(&rhs_ty, depth, u)?.inj_rhs(&lhs_ty))
+                        None
                     }
                 },
-                TyKind::Sigma { head_ty, tail_ty } => {
-                    let head_term = arbitrary_term_of_ty_with_depth(&head_ty, depth, u)?;
-                    let substituted_tail_ty = tail_ty.bind(&head_term);
-                    let tail_term = arbitrary_term_of_ty_with_depth(&substituted_tail_ty, depth, u)?;
-                    let term = head_term.pair(
-                        tail_ty.unbind(),
-                        &tail_term,
-                    );
-                    Some(term)
+                TyKind::Sigma { tail_ty } => {
+                    if let Some(depth) = depth.checked_sub(1) {
+                        let head_term = arbitrary_term_of_ty_with_depth(&tail_ty.var_ty(), depth, u)?;
+                        let substituted_tail_ty = tail_ty.bind(&head_term);
+                        let tail_term = arbitrary_term_of_ty_with_depth(&substituted_tail_ty, depth, u)?;
+                        let term = head_term.pair(
+                            tail_ty.unbind(),
+                            &tail_term,
+                        );
+                        Some(term)
+                    } else {
+                        None
+                    }
                 },
-                TyKind::Pi { arg_ty, res_ty } => {
-                    let res_term = arg_ty.try_scope(|arg_term| {
-                        arbitrary_term_of_ty_with_depth(&res_ty.bind(&arg_term), depth, u)
-                    })?;
-                    Some(arg_ty.func(res_term.unbind()))
+                TyKind::Pi { res_ty } => {
+                    if let Some(depth) = depth.checked_sub(1) {
+                        let res_term = res_ty.var_ty().try_scope(|arg_term| {
+                            arbitrary_term_of_ty_with_depth(&res_ty.bind(&arg_term), depth, u)
+                        })?;
+                        Some(res_ty.var_ty().func(res_term.unbind()))
+                    } else {
+                        None
+                    }
                 },
             };
             match term_opt {
@@ -291,25 +376,74 @@ fn arbitrary_term_of_ty_with_depth<'a>(
                 None => {
                     let index = u.choose_index(valid_indices.len())?;
                     let index = valid_indices[index];
-                    Ok(ty.ctx().var(index).to_term())
+                    Ok(ty.ctx().var(index))
                 },
             }
         },
     }
 }
 
-fn arbitrary_stuck_under_ctx_with_depth<'a>(
-    ctx: &Ctx,
+fn arbitrary_stuck_under_ctx_with_depth<'a, S>(
+    ctx: &Ctx<S>,
     depth: usize,
     u: &mut Unstructured<'a>,
-) -> arbitrary::Result<Stuck> {
+) -> arbitrary::Result<Stuck<S>>
+where
+    S: Scheme,
+    S::UserTy: Arbitrary<'a>,
+    S::UserTm: Arbitrary<'a>,
+{
+    // hack. prevent stack overflows until they're fixed.
+    let depth = std::cmp::min(depth, MAX_DEPTH);
+
     if let Some(depth) = depth.checked_sub(2) && u.arbitrary()? {
         let stuck = arbitrary_stuck_under_ctx_with_depth(ctx, depth, u)?;
         let term = match stuck.ty().kind() {
             TyKind::Stuck { .. } |
+            TyKind::User { .. } |
             TyKind::Universe => stuck.to_term(),
 
-            TyKind::Nat => stuck.to_term(), // TODO,
+            TyKind::Nat => {
+                match (u.arbitrary()?, u.arbitrary()?) {
+                    (false, false) => {
+                        let motive = ctx.nat().try_scope(|elim| {
+                            arbitrary_ty_under_ctx_with_depth(&elim.ctx(), depth, u)
+                        })?;
+                        let zero_inhab = arbitrary_term_of_ty_with_depth(
+                            &motive.bind(&ctx.zero()),
+                            depth,
+                            u,
+                        )?;
+                        let succ_inhab = ctx.nat().try_scope(|elim| {
+                            motive.bind(&elim).try_scope(|state| {
+                                let motive = motive.weaken_into(&state.ctx());
+                                arbitrary_term_of_ty_with_depth(
+                                    &motive.bind(&elim.succs(&NonZeroBigUint::one())),
+                                    depth,
+                                    u,
+                                )
+                            })
+                        })?;
+                        stuck.to_term().for_loop(
+                            |elim| motive.bind(&elim),
+                            &zero_inhab,
+                            |elim, state| succ_inhab.bind(&elim).bind(&state),
+                        )
+                    },
+                    (false, true) => {
+                        let rhs = arbitrary_term_of_ty_with_depth(&ctx.nat(), depth, u)?;
+                        stuck.to_term().max(&rhs)
+                    },
+                    (true, false) => {
+                        let rhs = arbitrary_term_of_ty_with_depth(&ctx.nat(), depth, u)?;
+                        stuck.to_term().add(&rhs)
+                    },
+                    (true, true) => {
+                        let rhs = arbitrary_term_of_ty_with_depth(&ctx.nat(), depth, u)?;
+                        stuck.to_term().mul(&rhs)
+                    },
+                }
+            },
 
             TyKind::Equal { eq_term_0, .. } => {
                 let motive = eq_term_0.ty().try_scope(|var_eq_term_0| {
@@ -319,8 +453,12 @@ fn arbitrary_stuck_under_ctx_with_depth<'a>(
                         })
                     })
                 })?;
-                let inhab_ty = motive.map(|var_eq_term, inner| inner.bind(&var_eq_term).bind(&var_eq_term.refl()));
-                let inhab = inhab_ty.try_map(|_var_eq_term, ty| arbitrary_term_of_ty_with_depth(&ty, depth, u))?;
+                let inhab_ty = motive.map(|var_eq_term, inner| {
+                    inner.bind(&var_eq_term).bind(&var_eq_term.refl())
+                });
+                let inhab = inhab_ty.try_map(|_var_eq_term, ty| {
+                    arbitrary_term_of_ty_with_depth(&ty, depth, u)
+                })?;
                 stuck.to_term().cong(
                     |var_eq_term_0, var_eq_term_1, var_elim| {
                         motive.bind(&var_eq_term_0).bind(&var_eq_term_1).bind(&var_elim)
@@ -330,24 +468,25 @@ fn arbitrary_stuck_under_ctx_with_depth<'a>(
             },
 
             TyKind::Never => {
-                let motive = stuck.ty().try_scope(|var_term| arbitrary_ty_under_ctx_with_depth(&var_term.ctx(), depth, u))?;
+                let motive = stuck.ty().try_scope(|var_term| {
+                    arbitrary_ty_under_ctx_with_depth(&var_term.ctx(), depth, u)
+                })?;
                 stuck.to_term().explode(motive.unbind())
             },
 
-            TyKind::Unit => {
-                let motive = stuck.ty().try_scope(|var_term| arbitrary_ty_under_ctx_with_depth(&var_term.ctx(), depth, u))?;
-                let inhab_ty = motive.bind(&ctx.unit_term());
-                let inhab = arbitrary_term_of_ty_with_depth(&inhab_ty, depth, u)?;
-                stuck.to_term().relay(motive.unbind(), &inhab)
-            },
+            TyKind::Unit => stuck.to_term(),
 
             TyKind::Sum { lhs_ty, rhs_ty } => {
-                let lhs_inhab = lhs_ty.try_scope(|lhs_term| arbitrary_term_under_ctx_with_depth(&lhs_term.ctx(), depth, u))?;
-                let rhs_inhab = rhs_ty.try_scope(|rhs_term| arbitrary_term_under_ctx_with_depth(&rhs_term.ctx(), depth, u))?;
+                let lhs_inhab = lhs_ty.try_scope(|lhs_term| {
+                    arbitrary_term_under_ctx_with_depth(&lhs_term.ctx(), depth, u)
+                })?;
+                let rhs_inhab = rhs_ty.try_scope(|rhs_term| {
+                    arbitrary_term_under_ctx_with_depth(&rhs_term.ctx(), depth, u)
+                })?;
                 let motive = stuck.ty().scope(|elim| {
                     elim
                     .case(
-                        |_| Ty::universe(),
+                        |elim| elim.ctx().universe(),
                         |lhs_term| lhs_inhab.bind(&lhs_term).ty().to_term(),
                         |rhs_term| rhs_inhab.bind(&rhs_term).ty().to_term(),
                     )
@@ -360,28 +499,16 @@ fn arbitrary_stuck_under_ctx_with_depth<'a>(
                 )
             },
 
-            TyKind::Sigma { head_ty, tail_ty } => {
-                let inhab = head_ty.try_scope(|head_term| {
-                    tail_ty.bind(&head_term).try_scope(|tail_term| {
-                        arbitrary_term_under_ctx_with_depth(&tail_term.ctx(), depth, u)
-                    })
-                })?;
-                let motive = stuck.ty().scope(|elim| {
-                    elim
-                    .split(
-                        |_| Ty::universe(),
-                        |head_term, tail_term| inhab.bind(&head_term).bind(&tail_term).ty().to_term(),
-                    )
-                    .to_ty()
-                });
-                stuck.to_term().split(
-                    motive.unbind(),
-                    |head_term, tail_term| inhab.bind(&head_term).bind(&tail_term),
-                )
+            TyKind::Sigma { tail_ty: _ } => {
+                if u.arbitrary()? {
+                    stuck.to_term().proj_head()
+                } else {
+                    stuck.to_term().proj_tail()
+                }
             },
 
-            TyKind::Pi { arg_ty, .. } => {
-                let arg_term = arbitrary_term_of_ty_with_depth(&arg_ty, depth, u)?;
+            TyKind::Pi { res_ty } => {
+                let arg_term = arbitrary_term_of_ty_with_depth(&res_ty.var_ty(), depth, u)?;
                 stuck.to_term().app(&arg_term)
             },
         };
@@ -390,8 +517,20 @@ fn arbitrary_stuck_under_ctx_with_depth<'a>(
             _ => Ok(stuck),
         }
     } else {
-        let index = u.choose_index(ctx.len())?;
-        Ok(ctx.var(index))
+        let mut indices = Vec::new();
+        let stuck = loop {
+            let mut index = u.choose_index(ctx.len() - indices.len())?;
+            for prev_index in indices.iter().copied() {
+                if index >= prev_index {
+                    index += 1;
+                }
+            }
+            if let TmKind::Stuck { stuck } = ctx.var(index).kind() {
+                break stuck;
+            }
+            indices.push(index);
+        };
+        Ok(stuck)
     }
 }
 
@@ -497,7 +636,6 @@ fn check_stuck_depths() {
         println!("{}, {}", depth, used);
     }
 }
-*/
 
 #[test]
 fn check_term_of_ty_depths() {
@@ -528,4 +666,5 @@ fn check_term_of_ty_depths() {
         println!("{}, {}", depth, used);
     }
 }
+*/
 

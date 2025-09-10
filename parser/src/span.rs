@@ -1,6 +1,6 @@
 use crate::priv_prelude::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Position {
     pub line: NonZero<usize>,
     pub column: NonZero<usize>,
@@ -40,7 +40,7 @@ impl Position {
 }
 
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
     pub full_src: Arc<str>,
     pub start: Position,
@@ -56,6 +56,14 @@ impl Span {
             end: cmp::max(span_0.end, span_1.end),
         }
     }
+
+    pub fn end_as_span(&self) -> Span {
+        Span {
+            full_src: self.full_src.clone(),
+            start: self.end,
+            end: self.end,
+        }
+    }
 }
 
 impl fmt::Display for Position {
@@ -66,7 +74,24 @@ impl fmt::Display for Position {
 
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}..{}", self.start, self.end)
+        write!(f, "{}..{} ", self.start, self.end)?;
+        let mut string;
+
+        let start = self.start.byte;
+        let end = self.end.byte;
+        let s = if end - start > 10 {
+            let mut end = start + 10;
+            while !self.full_src.is_char_boundary(end) {
+                end += 1;
+            }
+            string = String::from(&self.full_src[start..end]);
+            string.push_str("...");
+            string.as_str()
+        } else {
+            &self.full_src[start..end]
+        };
+        write!(f, "{:?}", s)?;
+        Ok(())
     }
 }
 

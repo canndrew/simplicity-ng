@@ -1,0 +1,17 @@
+# TODO
+
+* Make substitution more efficient by not needlessly growing the filter to
+  cover the entire term being substituted.
+  It only needs to cover the prefix before the variable index.
+
+* Run clippy to find unnecessary clones (and anything else).
+
+* Remove the need to explicitly call weaken_into when using the high-level api.
+    have a thread-local var that stores the current context.
+    can then move a lot of the methods off of context for creating types/terms
+    to just being static inherent methods on Ty/Tm.
+    The problem with this though is that it prevents writing parallel code
+    using scoped threads (eg. rayon).
+
+* Fix stack overflows for operations on very large trees by replacing recursion with loops.
+

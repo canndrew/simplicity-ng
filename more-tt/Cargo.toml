@@ -1,0 +1,11 @@
+[package]
+name = "more-tt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ext-trait = "*"
+core-tt = { path = "../core-tt" }
+num = "*"
+derive-where = "*"
+

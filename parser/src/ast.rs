@@ -1,30 +1,35 @@
 use crate::priv_prelude::*;
 
+#[derive(Debug)]
 pub struct Program {
     pub items: Vec<Item>,
 }
 
+#[derive(Debug)]
 pub enum Item {
-    ItemFn(Spanned<ItemFn>),
+    ItemDef(Spanned<ItemDef>),
 }
 
-pub struct ItemFn {
+#[derive(Debug)]
+pub struct ItemDef {
     pub name: Ident,
     pub args: Spanned<Vec<Spanned<TypeField>>>,
     pub return_ty: Box<PrecEqual>,
     pub body: Spanned<Box<PrecStmt>>,
 }
 
+#[derive(Debug)]
 pub struct TypeField {
     pub name: Ident,
     pub ty: Box<PrecEqual>,
 }
 
+#[derive(Debug)]
 pub enum PrecAtom {
-    Commit(Span),
+    //Commit(Span),
     TypeType(Span),
     NatType(Span),
-    FundsType(Span),
+    //FundsType(Span),
     Var(Ident),
     Nat(Spanned<BigUint>),
     Match(Spanned<ExprMatch>),
@@ -35,17 +40,20 @@ pub enum PrecAtom {
     Braced(Spanned<Box<PrecStmt>>),
 }
 
+#[derive(Debug)]
 pub struct ExprMatch {
     pub elim: Box<PrecEqual>,
     pub branches: Spanned<Vec<Spanned<MatchBranch>>>,
 }
 
+#[derive(Debug)]
 pub struct MatchBranch {
     pub variant_name: Ident,
     pub payload_name: Ident,
     pub body: Box<PrecEqual>,
 }
 
+#[derive(Debug)]
 pub struct ExprForLoop {
     pub counter_name: Ident,
     pub elim: Box<PrecEqual>,
@@ -55,138 +63,190 @@ pub struct ExprForLoop {
     pub body: Spanned<Box<PrecStmt>>,
 }
 
+#[derive(Debug)]
 pub struct ExprStructType {
     pub fields: Spanned<Vec<Spanned<TypeField>>>,
 }
 
+#[derive(Debug)]
 pub struct ExprEnumType {
     pub variants: Spanned<Vec<Spanned<TypeField>>>,
 }
 
+#[derive(Debug)]
 pub struct ExprStructTerm {
     pub fields: Spanned<Vec<Spanned<ExprStructTermField>>>,
 }
 
+#[derive(Debug)]
 pub struct ExprStructTermField {
     pub name: Ident,
     pub expr_ty_opt_opt: Option<(Option<PrecEqual>, PrecEqual)>,
 }
 
+#[derive(Debug)]
 pub enum PrecStmt {
     Let(Spanned<LetStmt>),
     Blank(Span),
     Other(PrecFunc),
 }
 
+#[derive(Debug)]
 pub enum PatPrecInj {
-    //Refl(Box<PatPrecInj>),
+    Refl(Spanned<PatRefl>),
     Other(PatPrecAtom),
 }
 
+#[derive(Debug)]
 pub enum PatPrecAtom {
     Var(Ident),
     Struct(Spanned<PatStructTerm>),
 }
 
+#[derive(Debug)]
+pub struct PatRefl {
+    pub eq_pat: Box<PatPrecInj>,
+}
+
+#[derive(Debug)]
 pub struct PatStructTerm {
     pub fields: Spanned<Vec<Spanned<PatStructTermField>>>,
 }
 
+#[derive(Debug)]
 pub struct PatStructTermField {
     pub name: Ident,
     pub pat_ty_opt_opt: Option<(Option<PrecEqual>, PatPrecInj)>,
 }
 
+#[derive(Debug)]
 pub struct LetStmt {
     pub var_pat: Box<PatPrecInj>,
-    pub var_expr: Box<PrecEqual>,
+    pub var_args_opt: Option<Spanned<Vec<Spanned<FuncTermArg>>>>,
+    pub var_ty_opt: Option<Box<PrecFunc>>,
+    pub var_expr: Box<PrecFunc>,
     pub body: Box<PrecStmt>,
 }
 
+#[derive(Debug)]
 pub enum PrecFunc {
     FuncType(Spanned<ExprFuncType>),
     FuncTerm(Spanned<ExprFuncTerm>),
     Other(PrecEqual),
 }
 
+#[derive(Debug)]
 pub struct ExprFuncType {
-    pub args: Spanned<Vec<Spanned<TypeField>>>,
+    pub args: Spanned<Vec<Spanned<FuncTermArg>>>,
     pub return_ty: Box<PrecFunc>,
 }
 
+#[derive(Debug)]
+pub struct FuncTermArg {
+    pub arg_name: Ident,
+    pub arg_ty_opt: Option<FuncTermArgTy>,
+}
+
+#[derive(Debug)]
+pub struct FuncTermArgTy {
+    pub args_opt: Option<Spanned<Vec<Spanned<FuncTermArg>>>>,
+    pub ty: Box<PrecFunc>,
+}
+
+#[derive(Debug)]
 pub struct ExprFuncTerm {
-    pub args: Spanned<Vec<Spanned<TypeField>>>,
+    pub args: Spanned<Vec<Spanned<FuncTermArg>>>,
     pub body: Box<PrecFunc>,
 }
 
+#[derive(Debug)]
 pub enum PrecEqual {
     Equal(Spanned<ExprEqual>),
     Other(PrecAdd),
 }
 
+#[derive(Debug)]
 pub struct ExprEqual {
     pub eq_expr_0: Box<PrecAdd>,
     pub eq_expr_1: Box<PrecAdd>,
 }
 
+#[derive(Debug)]
 pub enum PrecAdd {
     Add(Spanned<ExprAdd>),
     Other(PrecMul),
 }
 
+#[derive(Debug)]
 pub struct ExprAdd {
     pub lhs: Box<PrecAdd>,
     pub rhs: Box<PrecMul>,
 }
 
+#[derive(Debug)]
 pub enum PrecMul {
     Mul(Spanned<ExprMul>),
     Other(PrecInj),
 }
 
+#[derive(Debug)]
 pub struct ExprMul {
     pub lhs: Box<PrecMul>,
     pub rhs: Box<PrecInj>,
 }
 
+#[derive(Debug)]
 pub enum PrecInj {
     Inj(Spanned<ExprInj>),
     Refl(Spanned<ExprRefl>),
     Other(PrecProj),
 }
 
+#[derive(Debug)]
 pub struct ExprInj {
     pub variant_name: Ident,
     pub payload: Box<PrecInj>,
 }
 
+#[derive(Debug)]
 pub struct ExprRefl {
     pub eq_expr: Box<PrecInj>,
 }
 
+#[derive(Debug)]
 pub enum PrecProj {
     Proj(Spanned<ExprProj>),
     Other(PrecApp),
 }
 
+#[derive(Debug)]
 pub struct ExprProj {
     pub base: Box<PrecProj>,
     pub field_name: Ident,
 }
 
+#[derive(Debug)]
 pub enum PrecApp {
     App(Spanned<ExprApp>),
     Other(PrecAtom),
 }
 
+#[derive(Debug)]
 pub struct ExprApp {
     pub func: Box<PrecApp>,
     pub args: Spanned<Vec<Spanned<FuncAppArg>>>,
 }
 
+#[derive(Debug)]
 pub struct FuncAppArg {
     pub arg_name: Ident,
-    pub arg_expr_opt: Option<Box<PrecFunc>>,
+    pub arg_expr_opt: Option<FuncAppArgExpr>,
+}
+
+#[derive(Debug)]
+pub struct FuncAppArgExpr {
+    pub args_opt: Option<Spanned<Vec<Spanned<FuncTermArg>>>>,
+    pub expr: Box<PrecFunc>,
 }
 
 impl PrecFunc {
@@ -257,10 +317,10 @@ impl PrecApp {
 impl PrecAtom {
     pub fn span(&self) -> Span {
         match self {
-            PrecAtom::Commit(s) => s.clone(),
+            //PrecAtom::Commit(s) => s.clone(),
             PrecAtom::TypeType(s) => s.clone(),
             PrecAtom::NatType(s) => s.clone(),
-            PrecAtom::FundsType(s) => s.clone(),
+            //PrecAtom::FundsType(s) => s.clone(),
             PrecAtom::Var(s) => s.span(),
             PrecAtom::Nat(x) => x.span(),
             PrecAtom::Match(x) => x.span(),
@@ -276,6 +336,7 @@ impl PrecAtom {
 impl PatPrecInj {
     pub fn span(&self) -> Span {
         match self {
+            PatPrecInj::Refl(x) => x.span(),
             PatPrecInj::Other(x) => x.span(),
         }
     }

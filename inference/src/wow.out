@@ -1,0 +1,7 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/shum/work/src/simplicity-hl-again/core-tt/fuzz/Cargo.toml
+workspace: /home/shum/work/src/simplicity-hl-again/Cargo.toml
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (/home/shum/work/src/simplicity-hl-again/target/debug/deps/inference-51666da740e25187)
+
+running 6 tests

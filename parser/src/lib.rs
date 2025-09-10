@@ -8,6 +8,9 @@ mod combinators;
 mod span;
 mod parse;
 
+#[cfg(debug_assertions)]
+mod debug;
+
 pub use self::{
     token::{Token, Tokens, TokensRef, Ident, GroupKind, PunctKind, TokenizeError},
     span::{Position, Span, Spanned},

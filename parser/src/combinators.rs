@@ -215,11 +215,13 @@ fn must_consume_all<T, E: From<UnexpectedTokenError>>(
     })
 }
 
-pub fn group<T, E: From<UnexpectedTokenError>>(
+pub fn group<T, E: From<UnexpectedTokenError>, P>(
     kind: GroupKind,
-    parser: impl Parser<Output = T, Error = E>,
-) -> impl Parser<Output = Spanned<T>, Error = E> {
-    let parser = must_consume_all(parser);
+    parser: impl Fn(Span) -> P,
+) -> impl Parser<Output = Spanned<T>, Error = E>
+where
+    P: Parser<Output = T, Error = E>,
+{
     from_fn(move |tokens| {
         let Some(token) = tokens.first() else {
             return Ok(None);
@@ -231,23 +233,23 @@ pub fn group<T, E: From<UnexpectedTokenError>>(
             return Ok(None);
         }
         let inner_tokens = group.tokens.as_ref();
-        match parser.parse(&inner_tokens)? {
+        match must_consume_all(parser(group.outer_span.clone())).parse(&inner_tokens)? {
             None => Ok(None),
             Some((_count, val)) => Ok(Some((1, Spanned::new(group.span(), val)))),
         }
     })
 }
 
-pub fn curly_braced<T, E: From<UnexpectedTokenError>>(
-    parser: impl Parser<Output = T, Error = E>,
+pub fn curly_braced<T, E: From<UnexpectedTokenError>, P: Parser<Output = T, Error = E>>(
+    parser: impl Fn(Span) -> P,
 ) -> impl Parser<Output = Spanned<T>, Error = E>
 where
 {
     group(GroupKind::CurlyBrace, parser)
 }
 
-pub fn parens<T, E: From<UnexpectedTokenError>>(
-    parser: impl Parser<Output = T, Error = E>,
+pub fn parens<T, E: From<UnexpectedTokenError>, P: Parser<Output = T, Error = E>>(
+    parser: impl Fn(Span) -> P,
 ) -> impl Parser<Output = Spanned<T>, Error = E>
 where
 {
@@ -339,29 +341,25 @@ impl<T, E, P: Parser<Output = T, Error = E>> P {
         })
     }
 
-    /*
+    #[cfg(debug_assertions)]
     fn debug(self, name: &'static str) -> impl Parser<Output = T, Error = E> {
-        thread_local! {
-            pub static INDENT: Cell<usize> = Cell::new(0);
-        }
         from_fn(move |tokens| {
-            debug!("{}{} {{", get_indent(), name);
+            println!("{}{} {{", get_indent(), name);
             let ret = indent(|| self.parse(tokens));
             match &ret {
                 Ok(Some((count, _))) => {
-                    debug!("{}}} -> Ok(Some(({}, _)));", get_indent(), count)
+                    println!("{}}} -> Ok(Some(({}, _)));", get_indent(), count)
                 },
                 Ok(None) => {
-                    debug!("{}}} -> Ok(None);", get_indent());
+                    println!("{}}} -> Ok(None);", get_indent());
                 },
                 Err(_) => {
-                    debug!("{}}} -> Err(_);", get_indent());
+                    println!("{}}} -> Err(_);", get_indent());
                 },
             }
             ret
         })
     }
-    */
 }
 
 #[extension(pub trait ParserExtUnit)]

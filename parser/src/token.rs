@@ -50,10 +50,14 @@ impl<'a> TokensRef<'a> {
     }
 
     pub fn skip(&self, count: usize) -> TokensRef<'a> {
-        TokensRef {
-            span: self.span.clone(),
-            tokens: &self.tokens[count..],
-        }
+        let tokens = &self.tokens[count..];
+        let start = tokens.first().map(|token| token.span().start).unwrap_or(self.span.end);
+        let span = Span {
+            full_src: self.span.full_src.clone(),
+            start,
+            end: self.span.end,
+        };
+        TokensRef { span, tokens }
     }
 
     pub fn get(&self, index: usize) -> Option<&'a Token> {
@@ -83,6 +87,15 @@ impl PartialOrd for Ident {
 impl Ord for Ident {
     fn cmp(&self, other: &Ident) -> cmp::Ordering {
         Ord::cmp(self.as_str(), other.as_str())
+    }
+}
+
+impl hash::Hash for Ident {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: hash::Hasher,
+    {
+        hash::Hash::hash(self.as_str(), state)
     }
 }
 

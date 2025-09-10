@@ -5,3 +5,12 @@ pub fn as_equal<T: PartialEq>(val_0: T, val_1: T) -> Option<T> {
         None
     }
 }
+
+/*
+macro_rules! count_tokens {
+    () => { 0 };
+    ($first:tt $($rest:tt)*) => {
+        1 + count_tokens!($($rest)*)
+    };
+}
+*/

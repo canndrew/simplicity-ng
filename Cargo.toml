@@ -1,4 +1,16 @@
 [workspace]
 resolver = "3"
-members = ["core-tt", "parser", "small-bit-vec", "typecheck"]
+members = [
+    "frontend",
+    "codegen",
+    "core-tt",
+    "core-tt/core-tt-macros",
+    "core-tt/fuzz",
+    "more-tt",
+    "parser",
+    "small-bit-vec",
+    "small-bit-vec/fuzz",
+    "typecheck",
+    "debug", "inference",
+]
 

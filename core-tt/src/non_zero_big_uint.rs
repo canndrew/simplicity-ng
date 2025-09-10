@@ -1,6 +1,6 @@
 use crate::priv_prelude::*;
 
-#[derive(PartialOrd, Ord, PartialEq, Eq, Clone, Debug)]
+#[derive(PartialOrd, Ord, PartialEq, Eq, Clone, Debug, Hash)]
 pub struct NonZeroBigUint {
     inner: BigUint,
 }
@@ -45,6 +45,12 @@ impl NonZeroBigUint {
 
     pub fn strict_sub(&self, rhs: &NonZeroBigUint) -> BigUint {
         self.inner.checked_sub(&rhs.inner).unwrap()
+    }
+
+    pub fn one() -> NonZeroBigUint {
+        NonZeroBigUint {
+            inner: BigUint::one(),
+        }
     }
 
     /*
@@ -130,9 +136,7 @@ impl NonZeroBigUint {
 
 impl One for NonZeroBigUint {
     fn one() -> NonZeroBigUint {
-        NonZeroBigUint {
-            inner: BigUint::one(),
-        }
+        NonZeroBigUint::one()
     }
 }
 
@@ -400,6 +404,12 @@ impl ops::MulAssign<&NonZero<usize>> for NonZeroBigUint {
 impl fmt::Display for NonZeroBigUint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.inner, f)
+    }
+}
+
+impl Into<BigUint> for NonZeroBigUint {
+    fn into(self) -> BigUint {
+        self.inner
     }
 }
 

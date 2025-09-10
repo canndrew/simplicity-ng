@@ -1,0 +1,16 @@
+[package]
+name = "inference"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ext-trait = "*"
+#core-tt = { path = "../core-tt" }
+core-tt = { path = "../core-tt", no-default-features }
+more-tt = { path = "../more-tt" }
+num = "*"
+derive-where = "*"
+
+[dev-dependencies]
+color-backtrace = "*"
+

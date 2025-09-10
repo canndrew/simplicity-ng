@@ -1,6 +1,6 @@
 pub(crate) use {
     std::{
-        cmp, fmt,
+        cmp, fmt, hash,
         num::NonZero,
         ops::Deref,
         str::FromStr,
@@ -20,5 +20,11 @@ pub(crate) use {
         },
         parser::ParseError,
     },
+};
+
+#[cfg(debug_assertions)]
+pub(crate) use {
+    std::cell::Cell,
+    crate::debug::{indent, get_indent},
 };
 
