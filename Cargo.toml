@@ -1,8 +1,6 @@
 [workspace]
 resolver = "3"
 members = [
-    "frontend",
-    "codegen",
     "core-tt",
     "core-tt/core-tt-macros",
     "core-tt/fuzz",
@@ -10,7 +8,6 @@ members = [
     "parser",
     "small-bit-vec",
     "small-bit-vec/fuzz",
-    "typecheck",
     "debug", "inference",
 ]
 
