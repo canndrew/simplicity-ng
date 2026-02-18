@@ -21,8 +21,9 @@ pub struct IndentScope {
 /// # Examples
 ///
 /// ```
+/// # use debug::{debug, indent_scope};
 /// debug!("this prints with indentation x");
-/// let _indent = indent_scope!();
+/// let _indent = indent_scope();
 /// debug!("this prints with indentation x + 1");
 /// ```
 pub fn indent_scope() -> IndentScope {
@@ -93,12 +94,13 @@ macro_rules! debug {
 ///
 /// # Examples
 ///
-/// ```
+/// ```should_panic
+/// # use debug::debug_on_panic;
 /// {
-///     let _x = debug_on_panic!("this will not be printed");
+///     debug_on_panic!("this will not be printed");
 /// }
 /// {
-///     let _x = debug_on_panic!("this will be");
+///     debug_on_panic!("this will be");
 ///     panic!("oh no!");
 /// }
 /// ```
