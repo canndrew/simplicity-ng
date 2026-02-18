@@ -319,7 +319,7 @@ where
                                 Some(ty.ctx().zero())
                             } else {
                                 let pred_term = arbitrary_term_of_ty_with_depth(&ty, depth / 2, u)?;
-                                Some(pred_term.succs(&NonZeroBigUint::one()))
+                                Some(pred_term.succs(1u32))
                             }
                         },
                     }
@@ -418,7 +418,7 @@ where
                             motive.bind(&elim).try_scope(|state| {
                                 let motive = motive.weaken_into(&state.ctx());
                                 arbitrary_term_of_ty_with_depth(
-                                    &motive.bind(&elim.succs(&NonZeroBigUint::one())),
+                                    &motive.bind(&elim.succs(1u32)),
                                     depth,
                                     u,
                                 )
