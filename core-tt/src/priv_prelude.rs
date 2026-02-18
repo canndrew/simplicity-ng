@@ -33,7 +33,7 @@ pub(crate) use {
 #[cfg(debug_assertions)]
 pub(crate) use {
     crate::sanity_check::SanityCheck,
-    debug::{indent_scope, indent, debug, debug_indent, debug_on_panic},
+    debug::{indent_scope, debug, debug_on_panic},
 };
 
 #[cfg(feature = "arbitrary")]
