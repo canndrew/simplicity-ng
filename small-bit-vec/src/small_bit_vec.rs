@@ -220,22 +220,25 @@ impl SmallBitVec {
         }
     }
 
+    pub unsafe fn get_unchecked(&self, index: usize) -> bool {
+        if self.is_inline() {
+            let bits = unsafe { self.storage.inline };
+            usize_get_bit(bits, index)
+        } else {
+            let slice = unsafe { self.get_heap_slice() };
+            let (word_index, bit_index) = div_mod(index, USIZE_BITS);
+            usize_get_bit(slice[word_index], bit_index)
+        }
+    }
+
     pub fn get(&self, index: usize) -> Option<bool> {
         if !(index < self.len()) {
             return None;
         }
-        if self.is_inline() {
-            let bits = unsafe { self.storage.inline };
-            Some(usize_get_bit(bits, index))
-        } else {
-            let slice = unsafe { self.get_heap_slice() };
-            let (word_index, bit_index) = div_mod(index, USIZE_BITS);
-            Some(usize_get_bit(slice[word_index], bit_index))
-        }
+        Some(unsafe { self.get_unchecked(index) })
     }
 
-    pub fn set(&mut self, index: usize, bit: bool) {
-        assert!(index < self.len());
+    pub unsafe fn set_unchecked(&mut self, index: usize, bit: bool) {
         if self.is_inline() {
             let word = unsafe { &mut self.storage.inline };
             usize_set_bit(word, index, bit);
@@ -244,6 +247,11 @@ impl SmallBitVec {
             let (word_index, bit_index) = div_mod(index, USIZE_BITS);
             usize_set_bit(&mut slice[word_index], bit_index, bit);
         }
+    }
+
+    pub fn set(&mut self, index: usize, bit: bool) {
+        assert!(index < self.len());
+        unsafe { self.set_unchecked(index, bit) }
     }
 
     pub fn push(&mut self, bit: bool) {
@@ -459,6 +467,177 @@ impl SmallBitVec {
                     vec.reserve(additional);
                 })
             }
+        }
+    }
+
+    /*
+    pub fn scatter_bits(&mut self, mask: &SmallBitVec) {
+        assert!(mask.count_ones() <= self.len());
+    }
+    */
+
+    pub fn gather_bits(&mut self, mask: &SmallBitVec) {
+        assert!(mask.len() <= self.len());
+
+        if self.is_inline() {
+            let inline = unsafe { self.storage.inline };
+            let (mask_len, mask_word) = if mask.capacity_or_inline_len <= USIZE_BITS {
+                let mask_len = mask.capacity_or_inline_len;
+                let mask_word = unsafe { mask.storage.inline };
+                (mask_len, mask_word)
+            } else {
+                let ptr = unsafe { mask.storage.heap.as_ptr() };
+                let mask_len = unsafe { ptr.read() };
+                let mask_word = if mask_len == 0 { 0 } else {
+                    unsafe { ptr.add(1).read() }
+                };
+                (mask_len, mask_word)
+            };
+            let mask_mask = (!0usize).unbounded_shl(unsafe {
+                u32::try_from(mask_len).unwrap_unchecked()
+            });
+            let mask = unsafe { mask_word.unchecked_disjoint_bitor(mask_mask) };
+            self.storage.inline = crate::bmi2::pext(inline, mask);
+            self.capacity_or_inline_len = {
+                mask_bits(mask, self.capacity_or_inline_len).count_ones() as usize
+            };
+        } else {
+            let mask_len = mask.len();
+            let mask = mask.as_usize_slice();
+            unsafe {
+                self.with_heap_vec(|vec| {
+                    let (mask_full_words, shift) = div_mod(mask_len, USIZE_BITS);
+                    for word_index in 0..mask_full_words {
+                        let word = vec.get_unchecked_mut(1 + word_index);
+                        let mask_word = *mask.get_unchecked(word_index);
+                        *word = crate::bmi2::pext(*word, mask_word);
+                    }
+                    if shift > 0 {
+                        let word = vec.get_unchecked_mut(1 + mask_full_words);
+                        let mask_word = *mask.get_unchecked(mask_full_words);
+                        let mask_mask = {
+                            (!0usize).unchecked_shl(u32::try_from(shift).unwrap_unchecked())
+                        };
+                        let mask_word = {
+                            mask_word.unchecked_disjoint_bitor(mask_mask)
+                        };
+                        *word = crate::bmi2::pext(*word, mask_word);
+                    }
+
+                    let mut write_position = 0;
+                    for word_index in 0..mask_full_words {
+                        let word = *vec.get_unchecked(1 + word_index);
+                        *vec.get_unchecked_mut(1 + word_index) = 0;
+                        let mask_word = *mask.get_unchecked(word_index);
+                        let chunk_len = mask_word.count_ones() as usize;
+
+                        let (write_word_index, write_bit_index) = div_mod(
+                            write_position, USIZE_BITS,
+                        );
+                        let lower_word = {
+                            word.unchecked_shl(u32::try_from(write_bit_index).unwrap_unchecked())
+                        };
+                        {
+                            let write_word = vec.get_unchecked_mut(1 + write_word_index);
+                            *write_word = write_word.unchecked_disjoint_bitor(lower_word);
+                        }
+                        let written_len = USIZE_BITS.unchecked_sub(write_bit_index);
+                        if written_len < chunk_len {
+                            let word = {
+                                word.unchecked_shr(u32::try_from(written_len).unwrap_unchecked())
+                            };
+                            let next_write_word = vec.get_unchecked_mut(2 + write_word_index);
+                            *next_write_word = word;
+                        }
+                        write_position += chunk_len;
+                    }
+                    if shift > 0 {
+                        let word = *vec.get_unchecked(1 + mask_full_words);
+                        *vec.get_unchecked_mut(1 + mask_full_words) = 0;
+                        let mask_word = *mask.get_unchecked(mask_full_words);
+                        let mask_mask = {
+                            (!0usize).unchecked_shl(u32::try_from(shift).unwrap_unchecked())
+                        };
+                        let mask_word = {
+                            mask_word.unchecked_disjoint_bitor(mask_mask)
+                        };
+                        let chunk_len = mask_word.count_ones() as usize;
+
+                        let (write_word_index, write_bit_index) = div_mod(
+                            write_position, USIZE_BITS,
+                        );
+                        let lower_word = {
+                            word.unchecked_shl(u32::try_from(write_bit_index).unwrap_unchecked())
+                        };
+                        {
+                            let write_word = vec.get_unchecked_mut(1 + write_word_index);
+                            *write_word = write_word.unchecked_disjoint_bitor(lower_word);
+                        }
+                        let written_len = USIZE_BITS.unchecked_sub(write_bit_index);
+                        if written_len < chunk_len {
+                            let upper_word = {
+                                word.unchecked_shr(u32::try_from(written_len).unwrap_unchecked())
+                            };
+                            let next_write_word = vec.get_unchecked_mut(2 + write_word_index);
+                            *next_write_word = upper_word;
+                        }
+                        write_position += chunk_len;
+                    }
+
+                    let vec_words = vec.len().unchecked_sub(1);
+                    let consumed_words = mask_len.div_ceil(USIZE_BITS);
+                    if let Some(remaining_words) = vec_words.checked_sub(consumed_words) {
+                        let (write_word_index, write_bit_index) = div_mod(
+                            write_position, USIZE_BITS,
+                        );
+                        if write_bit_index == 0 {
+                            for offset in 0..remaining_words {
+                                let word = {
+                                    *vec.get_unchecked(1 + consumed_words + offset)
+                                };
+                                *vec.get_unchecked_mut(1 + write_word_index + offset) = word;
+                            }
+                        } else {
+                            let written_len = USIZE_BITS.unchecked_sub(write_bit_index);
+                            for offset in 0..remaining_words {
+                                let word = {
+                                    *vec.get_unchecked(1 + consumed_words + offset)
+                                };
+                                *vec.get_unchecked_mut(1 + consumed_words + offset) = 0;
+                                let lower_word = {
+                                    word.unchecked_shl(
+                                        u32::try_from(write_bit_index).unwrap_unchecked(),
+                                    )
+                                };
+                                {
+                                    let write_word = vec.get_unchecked_mut(
+                                        1 + write_word_index + offset,
+                                    );
+                                    *write_word = write_word.unchecked_disjoint_bitor(lower_word);
+                                }
+                                let upper_word = {
+                                    word.unchecked_shr(
+                                        u32::try_from(written_len).unwrap_unchecked(),
+                                    )
+                                };
+                                let next_write_word = vec.get_unchecked_mut(
+                                    2 + write_word_index + offset,
+                                );
+                                *next_write_word = upper_word;
+                            }
+                        }
+                    }
+                    let num_dropped_bits = {
+                        consumed_words
+                        .unchecked_mul(USIZE_BITS)
+                        .unchecked_sub(write_position)
+                    };
+                    let len = vec.get_unchecked_mut(0);
+                    *len = len.unchecked_sub(num_dropped_bits);
+                    let vec_len = 1 + len.div_ceil(USIZE_BITS);
+                    vec.set_len(vec_len);
+                });
+            };
         }
     }
 }
