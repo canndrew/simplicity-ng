@@ -127,8 +127,12 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
         let ctx = Ctx { raw_ctx };
         let inner = T::from_raw(ctx.clone(), inner);
         let inner = func(var_term, inner);
-        let (new_ctx, inner) = inner.into_raw();
-        assert_eq!(new_ctx, ctx);
+        let (new_ctx, mut inner) = inner.into_raw();
+
+        let diff = (ctx_len + 1).strict_sub(new_ctx.len());
+        assert_eq!(ctx.raw_ctx.nth_parent(diff), &new_ctx.raw_ctx);
+        inner.weaken(diff);
+
         let raw_scope = RawScope::new(raw_ty, inner);
         Scope {
             raw_ctx: self.raw_ctx.clone(),
@@ -165,8 +169,12 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
             },
             ControlFlow::Continue(inner) => {
                 let scope = {
-                    let (new_ctx, inner) = inner.into_raw();
-                    assert_eq!(new_ctx, ctx);
+                    let (new_ctx, mut inner) = inner.into_raw();
+
+                    let diff = (ctx_len + 1).strict_sub(new_ctx.len());
+                    assert_eq!(ctx.raw_ctx.nth_parent(diff), &new_ctx.raw_ctx);
+                    inner.weaken(diff);
+
                     let raw_scope = RawScope::new(raw_ty, inner);
                     Scope {
                         raw_ctx: self.raw_ctx.clone(),
