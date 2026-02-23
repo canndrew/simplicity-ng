@@ -432,7 +432,7 @@ where
                     },
                     (false, true) => {
                         let rhs = arbitrary_term_of_ty_with_depth(&ctx.nat(), depth, u)?;
-                        stuck.to_term().max(&rhs)
+                        Tm::max(&stuck.to_term(), &rhs)
                     },
                     (true, false) => {
                         let rhs = arbitrary_term_of_ty_with_depth(&ctx.nat(), depth, u)?;

@@ -1,6 +1,6 @@
 use crate::priv_prelude::*;
 
-#[derive_where(Debug, Clone, Eq, Hash)]
+#[derive_where(Debug, Clone, Eq, Hash, PartialOrd, Ord)]
 pub struct RawCtx<S: Scheme> {
     pub(crate) cons_opt: Option<Arc<RawCtxCons<S>>>,
 }
@@ -15,7 +15,7 @@ impl<S: Scheme> PartialEq for RawCtx<S> {
     }
 }
 
-#[derive_where(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive_where(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RawCtxCons<S: Scheme> {
     pub(crate) parent: RawCtx<S>,
     pub(crate) var_ty: RawTy<S>,

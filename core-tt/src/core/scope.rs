@@ -1,6 +1,11 @@
 use crate::priv_prelude::*;
 
-#[derive_where(Clone, PartialEq)]
+#[derive_where(Clone; T::Raw: Clone)]
+#[derive_where(PartialEq; T::Raw: PartialEq)]
+#[derive_where(Eq; T::Raw: Eq)]
+#[derive_where(Hash; T::Raw: hash::Hash)]
+#[derive_where(PartialOrd; T::Raw: PartialOrd)]
+#[derive_where(Ord; T::Raw: Ord)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Scope<S: Scheme, T: Contextual<S>> {
     pub(crate) raw_ctx: RawCtx<S>,

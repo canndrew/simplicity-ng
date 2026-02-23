@@ -2,7 +2,7 @@ use crate::priv_prelude::*;
 
 pub type RawTyped<S, T> = Weaken<RawTypedKind<S, T>>;
 
-#[derive_where(Debug, Clone, PartialEq, Eq, Hash; T)]
+#[derive_where(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord; T)]
 pub struct RawTypedKind<S: Scheme, T> {
     pub(crate) raw_ty: RawTy<S>,
     pub(crate) inner: Weaken<T>,

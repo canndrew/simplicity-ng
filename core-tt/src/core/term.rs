@@ -1,6 +1,6 @@
 use crate::priv_prelude::*;
 
-#[derive_where(Clone, PartialEq, Eq, Hash)]
+#[derive_where(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Tm<S: Scheme> {
     pub(crate) raw_ctx: RawCtx<S>,
