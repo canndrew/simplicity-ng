@@ -176,10 +176,10 @@ impl<S: Scheme> Ty<S> {
     }
 
     pub fn sum(
-        lhs_ty: &Ty<S>,
+        &self,
         rhs_ty: &Ty<S>,
     ) -> Ty<S> {
-        let (ctx, lhs_ty, rhs_ty) = Ctx::merge_into_ctx_2(lhs_ty, rhs_ty);
+        let (ctx, lhs_ty, rhs_ty) = Ctx::merge_into_ctx_2(self, rhs_ty);
         let raw_ctx = ctx.raw_ctx;
         let raw_ty = RawTy::sum(lhs_ty, rhs_ty);
         Ty { raw_ctx, raw_ty }
