@@ -1,5 +1,7 @@
 use crate::priv_prelude::*;
 
+/// A context is an ordered sequence of variable bindings. Each type of each variable can depend on
+/// all the preceding variables.
 #[derive_where(Clone, PartialEq)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Ctx<S: Scheme> {
@@ -7,20 +9,25 @@ pub struct Ctx<S: Scheme> {
 }
 
 impl<S: Scheme> Ctx<S> {
+    /// Get the root context which contains no variable bindings.
     pub fn root() -> Ctx<S> {
         Ctx {
             raw_ctx: RawCtx::root(),
         }
     }
 
+    /// Check whether this is the root context.
     pub fn is_root(&self) -> bool {
         self.len() == 0
     }
 
+    /// Get the number of variable bindings in the context.
     pub fn len(&self) -> usize {
         self.raw_ctx.len()
     }
 
+    /// Try to pop the inner-most variable binding from the context, returning its type.
+    /// You can get the popped context by calling the `ctx` method on the returned type.
     pub fn pop(&self) -> Option<Ty<S>> {
         let cons = self.raw_ctx.cons_opt.as_ref()?;
         let RawCtxCons { parent, var_ty } = &**cons;
@@ -28,6 +35,7 @@ impl<S: Scheme> Ctx<S> {
         Some(var_ty)
     }
 
+    /// Push a variable binding of type `var_ty` to the context, returning the extended context.
     pub fn cons(&self, var_ty: &Ty<S>) -> Ctx<S> {
         let ty_ctx_len = var_ty.raw_ty.usages.len();
         let diff = self.len().strict_sub(ty_ctx_len);
@@ -37,6 +45,8 @@ impl<S: Scheme> Ctx<S> {
         Ctx { raw_ctx }
     }
 
+    /// Pushes a variable binding of type `ty` onto the context and calls `func`, passing it a term
+    /// that refers to this variable.
     pub fn with_cons<T>(&self, ty: &Ty<S>, func: impl FnOnce(Tm<S>) -> T) -> T {
         let ty_ctx_len = ty.raw_ty.usages.len();
         let diff = self.len().strict_sub(ty_ctx_len);
@@ -53,19 +63,6 @@ impl<S: Scheme> Ctx<S> {
         func(var_term)
     }
 
-    /*
-    pub fn try_to_cons(&self) -> Option<(Ctx<S>, Ty<S>)> {
-        let Ctx { raw_ctx, ctx_len } = self;
-        let RawCtxCons { parent, var_ty } = &**raw_ctx.cons_opt.as_ref()?;
-        let ctx = Ctx { raw_ctx: parent.clone(), ctx_len: ctx_len.strict_sub(1) };
-        let var_ty = Ty {
-            raw_ctx: parent.clone(),
-            raw_ty: var_ty.clone(),
-        };
-        Some((ctx, var_ty))
-    }
-    */
-
     fn get_raw_ty_weakened(&self, index: usize) -> RawTy<S> {
         let de_brujin = self.len().strict_sub(index + 1);
         let var_ty = self.get_raw_ty(index);
@@ -76,6 +73,11 @@ impl<S: Scheme> Ctx<S> {
         self.raw_ctx.get_raw_ty(self.len(), index)
     }
 
+    /// Get the type of the variable binding at `index`.
+    ///
+    /// # Panics
+    ///
+    /// If `index` is out of range.
     pub fn get_ty(&self, index: usize) -> Ty<S> {
         let raw_ty = self.get_raw_ty_weakened(index);
         Ty {
@@ -84,6 +86,11 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Get a term that refers to the variable at `index`.
+    ///
+    /// # Panics
+    ///
+    /// if `index` is out of range.
     pub fn var(&self, index: usize) -> Tm<S> {
         let raw_ty = self.get_raw_ty(index);
         let raw_term = RawTm::var(self.len(), index, raw_ty);
@@ -94,21 +101,6 @@ impl<S: Scheme> Ctx<S> {
             raw_typed_term,
         }
     }
-
-    /*
-    pub fn get_var_by_name(&self, name: &S) -> Option<Tm<S>> {
-        let (var_ty, de_brujin) = self.raw_ctx.get_ty_and_de_brujin(name)?;
-        let index = self.ctx_len.strict_sub(1 + de_brujin);
-        let raw_term = RawTm::var(self.ctx_len, index, var_ty);
-        let var_ty = var_ty.clone_weaken(1 + de_brujin);
-        let raw_typed_term = RawTyped::from_parts(var_ty, raw_term);
-        let term = Tm {
-            raw_ctx: self.raw_ctx.clone(),
-            raw_typed_term,
-        };
-        Some(term)
-    }
-    */
 
     fn merge_ctx_2<T0: Contextual<S>, T1: Contextual<S>>(
         thing_0: &T0,
@@ -149,6 +141,14 @@ impl<S: Scheme> Ctx<S> {
         (ctx, thing_0, thing_1)
     }
 
+    /// Takes two things that implement `Contextual` and returns them weakened into the
+    /// common context that includes variables from both their contexts. The context of one thing
+    /// (either of them) must be an extension of the context of the other.
+    ///
+    /// # Panics
+    ///
+    /// If the contexts have diverged, each containing variables that the other doesn't.
+    ///
     pub fn into_common_ctx<T0: Contextual<S> + Clone, T1: Contextual<S> + Clone>(
         thing_0: &T0,
         thing_1: &T1,
@@ -159,6 +159,8 @@ impl<S: Scheme> Ctx<S> {
         (thing_0, thing_1)
     }
 
+    /// Returns the free (scoped under the root context) sigma type that contains all the variables
+    /// from this context.
     pub fn to_sigma(&self) -> Ty<S> {
         let raw_ctx = RawCtx::root();
         let raw_ty = self.raw_ctx.to_sigma(RawTy::unit(self.len()));

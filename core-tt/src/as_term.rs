@@ -1,7 +1,19 @@
 use crate::priv_prelude::*;
 
+/// Trait for types that can be represented as terms.
 pub trait AsTerm<S: Scheme> {
+    /// Convert `self` to a term. This should be an infallible operation.
     fn to_term(&self) -> Tm<S>;
+    /// Create a `Self` from a correctly-typed term.
+    ///
+    /// For `Ty::from_term(term)`, `term` must be a type.
+    ///
+    /// For `Scope::<_, T>::from_term(term)`, `term` must be a function whose output type can be
+    /// converted to `T`.
+    ///
+    /// # Panics
+    ///
+    /// If `term` does not have the correct type for `Self`.
     fn from_term(term: &Tm<S>) -> Self;
 }
 
