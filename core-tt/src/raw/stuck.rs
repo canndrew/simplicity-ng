@@ -5,6 +5,11 @@ pub type RawStuck<S> = Weaken<Intern<RawStuckKind<S>>>;
 #[derive_where(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RawStuckKind<S: Scheme> {
     Var,
+    StripTag {
+        tag: S::Tag,
+        untagged_ty: RawTy<S>,
+        elim: RawStuck<S>,
+    },
     ForLoop {
         elim: RawStuck<S>,
         motive: RawScope<S, Intern<RawTyKind<S>>>,
@@ -49,6 +54,22 @@ pub enum RawStuckKind<S: Scheme> {
         res_ty: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawStuck<S>,
         arg_term: RawTm<S>,
+    },
+
+    TaggedEqTagInjective {
+        tag_0: S::Tag,
+        tag_1: S::Tag,
+        untagged_ty_0: RawTy<S>,
+        untagged_ty_1: RawTy<S>,
+        elim: RawStuck<S>,
+    },
+
+    TaggedEqInnerInjective {
+        tag_0: S::Tag,
+        tag_1: S::Tag,
+        untagged_ty_0: RawTy<S>,
+        untagged_ty_1: RawTy<S>,
+        elim: RawStuck<S>,
     },
 
     EqualEqEqTyInjective {
@@ -132,6 +153,16 @@ impl<S: Scheme> RawStuck<S> {
             usages: Usages::single_one(ctx_len, index),
             weak: RawStuckKind::var(),
         }
+    }
+
+    pub(crate) fn strip_tag(
+        tag: S::Tag,
+        mut untagged_ty: RawTy<S>,
+        mut elim: RawStuck<S>,
+    ) -> RawStuck<S> {
+        let usages = Usages::merge_mut([&mut untagged_ty.usages, &mut elim.usages]);
+        let weak = Intern::new(RawStuckKind::StripTag { tag, untagged_ty, elim });
+        Weaken { usages, weak }
     }
 
     pub(crate) fn for_loop(
@@ -288,7 +319,7 @@ impl<S: Scheme> RawStuck<S> {
                  // ugh, have to adjust ty_vars every time we go through a filter
                 None
             },
-            
+
             RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
                 debug_assert!(matches!(motive.weak.inner.weak.get_clone(), RawTyKind::Universe));
                 let ctx_len = zero_inhab.usages.len();
@@ -483,10 +514,13 @@ impl<S: Scheme> RawStuck<S> {
                 Some(term.unfilter(&self.usages))
             },
 
+            RawStuckKind::StripTag { .. } => None,
             RawStuckKind::ProjHead { .. } => None,
             RawStuckKind::ProjTail { .. } => None,
             RawStuckKind::App { .. } => None,
 
+            RawStuckKind::TaggedEqTagInjective { .. } => None,
+            RawStuckKind::TaggedEqInnerInjective { .. } => None,
             RawStuckKind::EqualEqEqTyInjective { .. } => None,
             RawStuckKind::EqualEqEqTerm0Injective { .. } => None,
             RawStuckKind::EqualEqEqTerm1Injective { .. } => None,
@@ -497,6 +531,44 @@ impl<S: Scheme> RawStuck<S> {
             RawStuckKind::PiEqArgInjective { .. } => None,
             RawStuckKind::PiEqResInjective { .. } => None,
         }
+    }
+
+    pub(crate) fn tagged_eq_tag_injective(
+        tag_0: S::Tag,
+        tag_1: S::Tag,
+        mut untagged_ty_0: RawTy<S>,
+        mut untagged_ty_1: RawTy<S>,
+        mut elim: RawStuck<S>,
+    ) -> RawStuck<S> {
+        let usages = Usages::merge_mut([
+            &mut untagged_ty_0.usages,
+            &mut untagged_ty_1.usages,
+            &mut elim.usages,
+        ]);
+
+        let weak = Intern::new(RawStuckKind::TaggedEqTagInjective {
+            tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+        });
+        Weaken { usages, weak }
+    }
+
+    pub(crate) fn tagged_eq_inner_injective(
+        tag_0: S::Tag,
+        tag_1: S::Tag,
+        mut untagged_ty_0: RawTy<S>,
+        mut untagged_ty_1: RawTy<S>,
+        mut elim: RawStuck<S>,
+    ) -> RawStuck<S> {
+        let usages = Usages::merge_mut([
+            &mut untagged_ty_0.usages,
+            &mut untagged_ty_1.usages,
+            &mut elim.usages,
+        ]);
+
+        let weak = Intern::new(RawStuckKind::TaggedEqInnerInjective {
+            tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+        });
+        Weaken { usages, weak }
     }
 
     pub(crate) fn equal_eq_eq_ty_injective(
@@ -899,9 +971,12 @@ impl<S: Scheme> RawStuck<S> {
                 }
             },
 
+            RawStuckKind::StripTag { .. } |
             RawStuckKind::ProjHead { .. } |
             RawStuckKind::ProjTail { .. } |
             RawStuckKind::App { .. } |
+            RawStuckKind::TaggedEqTagInjective { .. } |
+            RawStuckKind::TaggedEqInnerInjective { .. } |
             RawStuckKind::EqualEqEqTyInjective { .. } |
             RawStuckKind::EqualEqEqTerm0Injective { .. } |
             RawStuckKind::EqualEqEqTerm1Injective { .. } |
@@ -1078,6 +1153,12 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
                 var_term
             },
 
+            RawStuckKind::StripTag { tag, untagged_ty, elim } => {
+                let untagged_ty = untagged_ty.subst(filter, &var_term);
+                let elim = elim.subst(filter, &var_term);
+                RawTm::strip_tag(tag, untagged_ty, elim)
+            },
+
             RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
                 let elim = elim.subst(filter, &var_term);
                 let motive = motive.subst(filter, &var_term);
@@ -1138,6 +1219,24 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
                 let elim = elim.subst(filter, &var_term);
                 let arg_term = arg_term.subst(filter, &var_term);
                 RawTm::app(res_ty, elim, arg_term)
+            },
+
+            RawStuckKind::TaggedEqTagInjective {
+                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+            } => {
+                let untagged_ty_0 = untagged_ty_0.subst(filter, &var_term);
+                let untagged_ty_1 = untagged_ty_1.subst(filter, &var_term);
+                let elim = elim.subst(filter, &var_term);
+                RawTm::tagged_eq_tag_injective(tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim)
+            },
+
+            RawStuckKind::TaggedEqInnerInjective {
+                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+            } => {
+                let untagged_ty_0 = untagged_ty_0.subst(filter, &var_term);
+                let untagged_ty_1 = untagged_ty_1.subst(filter, &var_term);
+                let elim = elim.subst(filter, &var_term);
+                RawTm::tagged_eq_inner_injective(tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim)
             },
 
             RawStuckKind::EqualEqEqTyInjective {
@@ -1261,6 +1360,10 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
     fn eliminates_var(&self, index: usize) -> bool {
         match self.get_clone() {
             RawStuckKind::Var => false,
+            RawStuckKind::StripTag { tag: _, untagged_ty, elim } => {
+                untagged_ty.eliminates_var(index) ||
+                elim.eliminates_var(index)
+            },
             RawStuckKind::ForLoop { elim, motive: _, zero_inhab, succ_inhab } => {
                 elim.as_var().map_or(false, |var_index| var_index == index) ||
                 elim.eliminates_var(index) ||
@@ -1302,6 +1405,12 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
                 arg_term.eliminates_var(index)
             },
 
+            RawStuckKind::TaggedEqTagInjective { elim, .. } => {
+                elim.eliminates_var(index)
+            },
+            RawStuckKind::TaggedEqInnerInjective { elim, .. } => {
+                elim.eliminates_var(index)
+            },
             RawStuckKind::EqualEqEqTyInjective { elim, .. } => {
                 elim.eliminates_var(index)
             },

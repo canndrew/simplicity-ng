@@ -7,8 +7,9 @@ pub enum RawTyKind<S: Scheme> {
     Stuck {
         stuck: RawStuck<S>,
     },
-    User {
-        user_ty: S::UserTy,
+    Tagged {
+        tag: S::Tag,
+        inner_ty: Intern<RawTyKind<S>>,
     },
     Universe,
     Nat,
@@ -55,11 +56,10 @@ impl<S: Scheme> RawTy<S> {
         Weaken { usages, weak }
     }
 
-    pub(crate) fn user(ctx_len: usize, user_ty: S::UserTy) -> RawTy<S> {
-        Weaken {
-            usages: Usages::zeros(ctx_len),
-            weak: Intern::new(RawTyKind::User { user_ty }),
-        }
+    pub(crate) fn tagged(tag: S::Tag, inner_ty: RawTy<S>) -> RawTy<S> {
+        let Weaken { usages, weak: inner_ty } = inner_ty;
+        let weak = Intern::new(RawTyKind::Tagged { tag, inner_ty });
+        Weaken { usages, weak }
     }
 
     pub(crate) fn universe(ctx_len: usize) -> RawTy<S> {
@@ -126,7 +126,11 @@ impl<S: Scheme> RawTy<S> {
                 let term = stuck.unique_eta_term_opt(ty_var_etas)?;
                 Some(term.unfilter(&self.usages))
             },
-            RawTyKind::User { .. } => None,
+            RawTyKind::Tagged { tag, inner_ty } => {
+                let inner_ty = Weaken { usages: self.usages.clone(), weak: inner_ty };
+                let inner_term = inner_ty.unique_eta_term_opt(ty_var_etas)?;
+                Some(RawTm::tagged(tag, inner_term))
+            },
             RawTyKind::Universe => None,
             RawTyKind::Nat => None,
             RawTyKind::Equal { .. } => None,
@@ -519,7 +523,10 @@ impl<S: Scheme> Substitute<S> for Intern<RawTyKind<S>> {
                 let stuck = stuck.subst(filter, &var_term);
                 RawTy::from_term(stuck)
             },
-            RawTyKind::User { user_ty } => RawTy::user(filter.len(), user_ty.clone()),
+            RawTyKind::Tagged { tag, inner_ty } => {
+                let inner_ty = inner_ty.subst(filter, var_term);
+                RawTy::tagged(tag, inner_ty)
+            },
             RawTyKind::Universe => RawTy::universe(filter.len()),
             RawTyKind::Nat => RawTy::nat(filter.len()),
             RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } => {
@@ -549,7 +556,7 @@ impl<S: Scheme> Substitute<S> for Intern<RawTyKind<S>> {
     fn eliminates_var(&self, index: usize) -> bool {
         match self.get_clone() {
             RawTyKind::Stuck { stuck } => stuck.eliminates_var(index),
-            RawTyKind::User { .. } => false,
+            RawTyKind::Tagged { tag: _, inner_ty } => inner_ty.eliminates_var(index),
             RawTyKind::Universe => false,
             RawTyKind::Nat => false,
             RawTyKind::Equal { eq_ty: _, eq_term_0, eq_term_1 } => {

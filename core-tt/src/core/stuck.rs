@@ -12,6 +12,10 @@ pub enum StuckKind<S: Scheme> {
     Var {
         index: usize,
     },
+    StripTag {
+        tag: S::Tag,
+        elim: Stuck<S>,
+    },
     ForLoop {
         elim: Stuck<S>,
         motive: Scope<S, Ty<S>>,
@@ -63,6 +67,12 @@ pub enum StuckKind<S: Scheme> {
         arg_term: Tm<S>,
     },
 
+    TaggedEqTagInjective {
+        elim: Stuck<S>,
+    },
+    TaggedEqInnerInjective {
+        elim: Stuck<S>,
+    },
     EqualEqEqTyInjective {
         elim: Stuck<S>,
     },
@@ -150,6 +160,18 @@ impl<S: Scheme> Stuck<S> {
             RawStuckKind::Var => {
                 let index = raw_stuck.usages.index_of_single_one().unwrap();
                 StuckKind::Var { index }
+            },
+
+            RawStuckKind::StripTag { tag, untagged_ty, elim } => {
+                let untagged_ty = untagged_ty.clone_unfilter(&raw_stuck.usages);
+                let elim = elim.clone_unfilter(&raw_stuck.usages);
+                let elim_ty = RawTy::tagged(tag.clone(), untagged_ty);
+                let elim = RawTyped::from_parts(elim_ty, elim);
+                let elim = Stuck {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_typed_stuck: elim,
+                };
+                StuckKind::StripTag { tag, elim }
             },
 
             RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
@@ -485,6 +507,44 @@ impl<S: Scheme> Stuck<S> {
                 };
 
                 StuckKind::App { elim, arg_term }
+            },
+
+            RawStuckKind::TaggedEqTagInjective {
+                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+            } => {
+                let untagged_ty_0 = untagged_ty_0.clone_unfilter(&raw_stuck.usages);
+                let untagged_ty_1 = untagged_ty_1.clone_unfilter(&raw_stuck.usages);
+                let elim = elim.clone_unfilter(&raw_stuck.usages);
+                let elim_ty = RawTy::equal(
+                    RawTy::universe(ctx_len),
+                    RawTm::from_ty(RawTy::tagged(tag_0, untagged_ty_0)),
+                    RawTm::from_ty(RawTy::tagged(tag_1, untagged_ty_1)),
+                );
+                let elim = RawTyped::from_parts(elim_ty, elim);
+                let elim = Stuck {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_typed_stuck: elim,
+                };
+                StuckKind::TaggedEqTagInjective { elim }
+            },
+
+            RawStuckKind::TaggedEqInnerInjective {
+                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+            } => {
+                let untagged_ty_0 = untagged_ty_0.clone_unfilter(&raw_stuck.usages);
+                let untagged_ty_1 = untagged_ty_1.clone_unfilter(&raw_stuck.usages);
+                let elim = elim.clone_unfilter(&raw_stuck.usages);
+                let elim_ty = RawTy::equal(
+                    RawTy::universe(ctx_len),
+                    RawTm::from_ty(RawTy::tagged(tag_0, untagged_ty_0)),
+                    RawTm::from_ty(RawTy::tagged(tag_1, untagged_ty_1)),
+                );
+                let elim = RawTyped::from_parts(elim_ty, elim);
+                let elim = Stuck {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_typed_stuck: elim,
+                };
+                StuckKind::TaggedEqInnerInjective { elim }
             },
 
             RawStuckKind::EqualEqEqTyInjective {

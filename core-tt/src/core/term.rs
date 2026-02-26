@@ -12,8 +12,9 @@ pub enum TmKind<S: Scheme> {
     Stuck {
         stuck: Stuck<S>,
     },
-    User {
-        user_term: S::UserTm,
+    Tagged {
+        tag: S::Tag,
+        inner_term: Tm<S>,
     },
     Type {
         ty: Ty<S>,
@@ -110,8 +111,20 @@ impl<S: Scheme> Tm<S> {
                 };
                 TmKind::Stuck { stuck }
             },
-            RawTmKind::User { user_term } => {
-                TmKind::User { user_term }
+            RawTmKind::Tagged { tag, inner_term } => {
+                let RawTyKind::Tagged { tag: ty_tag, inner_ty } = raw_ty.weak.get_clone() else {
+                    unreachable!();
+                };
+                debug_assert_eq!(tag, ty_tag);
+
+                let inner_ty = Weaken { usages: raw_ty.usages.clone(), weak: inner_ty };
+                let inner_term = Weaken { usages: raw_term.usages.clone(), weak: inner_term };
+                let inner_term = Tm {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_typed_term: RawTyped::from_parts(inner_ty, inner_term),
+                };
+
+                TmKind::Tagged { tag, inner_term }
             },
             RawTmKind::Type { ty } => {
                 let ty = ty.clone_unfilter(&raw_term.usages);
@@ -866,6 +879,166 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    pub fn tagged_eq_tag_injective(&self) -> Tm<S> {
+        let Tm { raw_ctx, raw_typed_term } = self;
+        let ctx_len = raw_typed_term.usages.len();
+        let (raw_ty, raw_term) = raw_typed_term.to_parts();
+        let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
+            panic!(
+                "tagged_eq_tag_injective(): self is not an equality.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTyKind::Universe = eq_ty.weak.get_clone() else {
+            panic!(
+                "tagged_eq_tag_injective(): self is not an equality between types.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
+            panic!(
+                "tagged_eq_tag_injective(): type on left side of equality\
+                is not a tagged type.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTyKind::Tagged { tag: tag_0, inner_ty: inner_ty_0 } = ty_0.weak.get_clone() else {
+            panic!(
+                "tagged_eq_tag_injective(): type on left side of equality\
+                is not a tagged type.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
+            panic!(
+                "tagged_eq_tag_injective(): type on right side of equality\
+                is not a tagged type.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTyKind::Tagged { tag: tag_1, inner_ty: inner_ty_1 } = ty_1.weak.get_clone() else {
+            panic!(
+                "tagged_eq_tag_injective(): type on right side of equality\
+                is not a tagged type.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+
+        let inner_ty_0 = {
+            Weaken { usages: ty_0.usages, weak: inner_ty_0 }
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let inner_ty_1 = {
+            Weaken { usages: ty_1.usages, weak: inner_ty_1 }
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+
+        let ty = if tag_0 == tag_1 {
+            RawTy::unit(ctx_len)
+        } else {
+            RawTy::never(ctx_len)
+        };
+        let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
+            Some(eta_term) => eta_term,
+            None => RawTm::tagged_eq_tag_injective(
+                tag_0, tag_1, inner_ty_0, inner_ty_1, raw_term,
+            ),
+        };
+        let term = RawTyped::from_parts(ty, term);
+        Tm { 
+            raw_ctx: raw_ctx.clone(),
+            raw_typed_term: term,
+        }
+    }
+
+    pub fn tagged_eq_inner_injective(&self) -> Tm<S> {
+        let Tm { raw_ctx, raw_typed_term } = self;
+        let ctx_len = raw_typed_term.usages.len();
+        let (raw_ty, raw_term) = raw_typed_term.to_parts();
+        let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
+            panic!(
+                "tagged_eq_inner_injective(): self is not an equality.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTyKind::Universe = eq_ty.weak.get_clone() else {
+            panic!(
+                "tagged_eq_inner_injective(): self is not an equality between types.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
+            panic!(
+                "tagged_eq_inner_injective(): type on left side of equality\
+                is not a tagged type.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTyKind::Tagged { tag: tag_0, inner_ty: inner_ty_0 } = ty_0.weak.get_clone() else {
+            panic!(
+                "tagged_eq_inner_injective(): type on left side of equality\
+                is not a tagged type.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
+            panic!(
+                "tagged_eq_inner_injective(): type on right side of equality\
+                is not a tagged type.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTyKind::Tagged { tag: tag_1, inner_ty: inner_ty_1 } = ty_1.weak.get_clone() else {
+            panic!(
+                "tagged_eq_inner_injective(): type on right side of equality\
+                is not a tagged type.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+
+        let inner_ty_0 = {
+            Weaken { usages: ty_0.usages, weak: inner_ty_0 }
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let inner_ty_1 = {
+            Weaken { usages: ty_1.usages, weak: inner_ty_1 }
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+
+        let ty = RawTy::equal(
+            RawTy::universe(ctx_len),
+            RawTm::from_ty(inner_ty_0.clone()),
+            RawTm::from_ty(inner_ty_1.clone()),
+        );
+        let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
+            Some(eta_term) => eta_term,
+            None => RawTm::tagged_eq_inner_injective(
+                tag_0, tag_1, inner_ty_0, inner_ty_1, raw_term,
+            ),
+        };
+        let term = RawTyped::from_parts(ty, term);
+        Tm { 
+            raw_ctx: raw_ctx.clone(),
+            raw_typed_term: term,
+        }
+    }
+
     pub fn equal_eq_eq_ty_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -963,13 +1136,10 @@ impl<S: Scheme> Tm<S> {
             ),
         };
         let term = RawTyped::from_parts(ty, term);
-        let ret = Tm {
+        Tm {
             raw_ctx: raw_ctx.clone(),
             raw_typed_term: term,
-        };
-        // TODO: remove
-        ret.sanity_check();
-        ret
+        }
     }
 
     pub fn equal_eq_eq_term_0_injective(&self) -> Tm<S> {
@@ -1648,6 +1818,36 @@ impl<S: Scheme> Tm<S> {
                 .as_var()
             },
             _ => None,
+        }
+    }
+
+    pub fn tagged(&self, tag: S::Tag) -> Tm<S> {
+        let Tm { raw_ctx, raw_typed_term } = self;
+        let (raw_ty, raw_term) = raw_typed_term.to_parts();
+        let raw_ty = RawTy::tagged(tag.clone(), raw_ty);
+        let raw_term = RawTm::tagged(tag, raw_term);
+        let raw_typed_term = RawTyped::from_parts(raw_ty, raw_term);
+
+        Tm { raw_ctx: raw_ctx.clone(), raw_typed_term }
+    }
+
+    pub fn strip_tag(&self) -> Tm<S> {
+        let Tm { raw_ctx, raw_typed_term } = self;
+        let (raw_ty, raw_term) = raw_typed_term.to_parts();
+        let RawTyKind::Tagged { tag, inner_ty } = raw_ty.weak.get_clone() else {
+            panic!(
+                "strip_tag(): self is not a tagged term.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        
+        let inner_ty = Weaken { usages: raw_ty.usages, weak: inner_ty };
+        let term = RawTm::strip_tag(tag, inner_ty.clone(), raw_term);
+        let term = RawTyped::from_parts(inner_ty, term);
+        Tm {
+            raw_ctx: raw_ctx.clone(),
+            raw_typed_term: term,
         }
     }
 }

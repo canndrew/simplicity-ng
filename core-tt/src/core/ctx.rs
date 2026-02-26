@@ -167,23 +167,6 @@ impl<S: Scheme> Ctx<S> {
         Ty { raw_ctx, raw_ty }
     }
 
-    pub fn user_ty(&self, user_ty: &S::UserTy) -> Ty<S> {
-        Ty {
-            raw_ctx: self.raw_ctx.clone(),
-            raw_ty: RawTy::user(self.len(), user_ty.clone()),
-        }
-    }
-
-    pub fn user_term(&self, user_term: &S::UserTm) -> Tm<S> {
-        Tm {
-            raw_ctx: self.raw_ctx.clone(),
-            raw_typed_term: RawTyped::from_parts(
-                RawTy::user(self.len(), S::user_ty_of(user_term)),
-                RawTm::user(self.len(), user_term.clone()),
-            ),
-        }
-    }
-
     pub fn universe(&self) -> Ty<S> {
         Ty {
             raw_ctx: self.raw_ctx.clone(),

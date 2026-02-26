@@ -12,8 +12,9 @@ pub enum TyKind<S: Scheme> {
     Stuck {
         stuck: Stuck<S>,
     },
-    User {
-        user_ty: S::UserTy,
+    Tagged {
+        tag: S::Tag,
+        inner_ty: Ty<S>,
     },
     Universe,
     Nat,
@@ -122,7 +123,13 @@ impl<S: Scheme> Ty<S> {
                 };
                 TyKind::Stuck { stuck }
             },
-            RawTyKind::User { user_ty } => TyKind::User { user_ty },
+            RawTyKind::Tagged { tag, inner_ty } => {
+                let inner_ty = Ty {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_ty: Weaken { usages: raw_ty.usages.clone(), weak: inner_ty },
+                };
+                TyKind::Tagged { tag, inner_ty }
+            },
             RawTyKind::Universe => TyKind::Universe,
             RawTyKind::Nat => TyKind::Nat,
             RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } => {
@@ -275,6 +282,12 @@ impl<S: Scheme> Ty<S> {
             raw_ctx: self.raw_ctx.clone(),
             raw_typed_term,
         })
+    }
+
+    pub fn tagged(&self, tag: S::Tag) -> Ty<S> {
+        let Ty { raw_ctx, raw_ty } = self;
+        let raw_ty = RawTy::tagged(tag, raw_ty.clone());
+        Ty { raw_ctx: raw_ctx.clone(), raw_ty }
     }
 
     /*

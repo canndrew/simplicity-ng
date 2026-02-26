@@ -39,8 +39,8 @@ impl<S: Scheme> SanityCheck<S> for Intern<RawTyKind<S>> {
                 Usages::assert_or_to_ones([&stuck.usages]);
                 stuck.sanity_check(ctx_opt, filter, (&ty_filter, &stuck_ty));
             },
-            RawTyKind::User { .. } => {
-                assert!(filter.is_zeros());
+            RawTyKind::Tagged { tag: _, inner_ty } => {
+                inner_ty.sanity_check(ctx_opt, filter, ());
             },
             RawTyKind::Universe => {
                 assert!(filter.is_zeros());
@@ -95,10 +95,13 @@ impl<S: Scheme> SanityCheck<S> for Intern<RawTmKind<S>> {
                 Usages::assert_or_to_ones([&stuck.usages]);
                 stuck.sanity_check(ctx_opt, filter, (ty_filter, raw_ty));
             },
-            RawTmKind::User { user_term } => {
-                assert!(filter.is_zeros());
-                let RawTyKind::User { user_ty } = raw_ty.weak.get_clone() else { panic!() };
-                assert_eq!(user_ty, S::user_ty_of(&user_term));
+            RawTmKind::Tagged { tag, inner_term } => {
+                let RawTyKind::Tagged { tag: ty_tag, inner_ty } = raw_ty.weak.get_clone() else {
+                    panic!();
+                };
+                assert_eq!(tag, ty_tag);
+                let inner_ty = Weaken { usages: raw_ty.usages.clone(), weak: inner_ty };
+                inner_term.sanity_check(ctx_opt, filter, (ty_filter, &inner_ty));
             },
             RawTmKind::Type { ty } => {
                 Usages::assert_or_to_ones([&ty.usages]);
@@ -188,7 +191,8 @@ impl<S: Scheme> SanityCheck<S> for Intern<RawStuckKind<S>> {
     fn sanity_check<'m>(
         &self,
         ctx_opt: Option<&Ctx<S>>,
-        filter: &Usages, (ty_filter, raw_ty): (&'m Usages, &'m RawTy<S>),
+        filter: &Usages,
+        (ty_filter, raw_ty): (&'m Usages, &'m RawTy<S>),
     ) {
         if let Some(ctx) = ctx_opt {
             assert_eq!(filter.len(), ctx.len());
@@ -206,8 +210,19 @@ impl<S: Scheme> SanityCheck<S> for Intern<RawStuckKind<S>> {
                 assert!(expected_ty.unique_eta_term_opt(&mut Vec::new()).is_none());
             },
 
+            RawStuckKind::StripTag { tag, untagged_ty, elim } => {
+                let elim_ty = RawTy::tagged(tag, untagged_ty.clone()); 
+                elim.sanity_check(ctx_opt, filter, (ty_filter, &elim_ty));
+
+                let expected_ty = raw_ty.clone_unfilter(ty_filter);
+                let actual_ty = untagged_ty.clone_unfilter(filter);
+                assert_eq!(expected_ty, actual_ty);
+            },
+
             RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
-                Usages::assert_or_to_ones([&elim.usages, &motive.usages, &zero_inhab.usages, &succ_inhab.usages]);
+                Usages::assert_or_to_ones([
+                    &elim.usages, &motive.usages, &zero_inhab.usages, &succ_inhab.usages,
+                ]);
                 let nat_ty_filter = Usages::zeros(filter.len());
                 let nat_ty = RawTy::nat(0);
                 elim.sanity_check(ctx_opt, filter, (&nat_ty_filter, &nat_ty));
@@ -524,6 +539,60 @@ impl<S: Scheme> SanityCheck<S> for Intern<RawStuckKind<S>> {
                     .clone()
                     .bind(&arg_term)
                     .unfilter(filter)
+                };
+                let expected_ty = raw_ty.clone_unfilter(ty_filter);
+                assert_eq!(actual_ty, expected_ty);
+            },
+
+            RawStuckKind::TaggedEqTagInjective {
+                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+            } => {
+                Usages::assert_or_to_ones([
+                    &untagged_ty_0.usages,
+                    &untagged_ty_1.usages,
+                    &elim.usages,
+                ]);
+                untagged_ty_0.sanity_check(ctx_opt, filter, ());
+                untagged_ty_1.sanity_check(ctx_opt, filter, ());
+                let elim_ty = RawTy::equal(
+                    RawTy::universe(filter.count_ones()),
+                    RawTm::from_ty(RawTy::tagged(tag_0.clone(), untagged_ty_0.clone())),
+                    RawTm::from_ty(RawTy::tagged(tag_1.clone(), untagged_ty_1.clone())),
+                );
+                elim.sanity_check(ctx_opt, filter, (filter, &elim_ty));
+
+                let actual_ty = if tag_0 == tag_1 {
+                    RawTy::unit(filter.count_ones())
+                } else {
+                    RawTy::never(filter.count_ones())
+                };
+                let expected_ty = raw_ty.clone_unfilter(ty_filter);
+                assert_eq!(actual_ty, expected_ty);
+            },
+
+            RawStuckKind::TaggedEqInnerInjective {
+                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+            } => {
+                Usages::assert_or_to_ones([
+                    &untagged_ty_0.usages,
+                    &untagged_ty_1.usages,
+                    &elim.usages,
+                ]);
+                untagged_ty_0.sanity_check(ctx_opt, filter, ());
+                untagged_ty_1.sanity_check(ctx_opt, filter, ());
+                let elim_ty = RawTy::equal(
+                    RawTy::universe(filter.count_ones()),
+                    RawTm::from_ty(RawTy::tagged(tag_0, untagged_ty_0.clone())),
+                    RawTm::from_ty(RawTy::tagged(tag_1, untagged_ty_1.clone())),
+                );
+                elim.sanity_check(ctx_opt, filter, (filter, &elim_ty));
+
+                let actual_ty = {
+                    RawTy::equal(
+                        RawTy::universe(filter.count_ones()),
+                        RawTm::from_ty(untagged_ty_0),
+                        RawTm::from_ty(untagged_ty_1),
+                    )
                 };
                 let expected_ty = raw_ty.clone_unfilter(ty_filter);
                 assert_eq!(actual_ty, expected_ty);

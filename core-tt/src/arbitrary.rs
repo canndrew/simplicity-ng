@@ -6,8 +6,7 @@ const MAX_DEPTH: usize = 10;
 impl<'a, S> Arbitrary<'a> for Ctx<S>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Ctx<S>> {
         let depth = u.len() / 8;
@@ -28,8 +27,7 @@ where
 impl<'a, S> Arbitrary<'a> for Ty<S>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Ty<S>> {
         let depth = u.len() / 7;
@@ -41,8 +39,7 @@ where
 impl<'a, S> Arbitrary<'a> for Tm<S>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Tm<S>> {
         let depth = u.len() / 8;
@@ -54,8 +51,7 @@ where
 impl<'a, S> Arbitrary<'a> for Stuck<S>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Stuck<S>> {
         let depth = u.len() / 8;
@@ -69,8 +65,7 @@ pub fn arbitrary_ctx<'a, S>(
 ) -> arbitrary::Result<Ctx<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     let depth = u.len() / 8;
     arbitrary_ctx_with_depth(depth, u)
@@ -82,8 +77,7 @@ pub fn arbitrary_ty_under_ctx<'a, S>(
 ) -> arbitrary::Result<Ty<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     let depth = u.len() / 5;
     arbitrary_ty_under_ctx_with_depth(&ctx, depth, u)
@@ -95,8 +89,7 @@ pub fn arbitrary_term_under_ctx<'a, S>(
 ) -> arbitrary::Result<Tm<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     let depth = u.len() / 6;
     arbitrary_term_under_ctx_with_depth(&ctx, depth, u)
@@ -108,8 +101,7 @@ pub fn arbitrary_term_of_ty<'a, S>(
 ) -> arbitrary::Result<Tm<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     let depth = u.len() / 3;
     arbitrary_term_of_ty_with_depth(&ty, depth, u)
@@ -121,8 +113,7 @@ pub fn arbitrary_stuck_under_ctx<'a, S>(
 ) -> arbitrary::Result<Stuck<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     let depth = u.len() / 4;
     arbitrary_stuck_under_ctx_with_depth(&ctx, depth, u)
@@ -134,8 +125,7 @@ fn arbitrary_ctx_with_depth<'a, S>(
 ) -> arbitrary::Result<Ctx<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     // hack. prevent stack overflows until they're fixed.
     let depth = std::cmp::min(depth, MAX_DEPTH);
@@ -156,8 +146,7 @@ fn arbitrary_ty_under_ctx_with_depth<'a, S>(
 ) -> arbitrary::Result<Ty<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     // hack. prevent stack overflows until they're fixed.
     let depth = std::cmp::min(depth, MAX_DEPTH);
@@ -167,10 +156,13 @@ where
     choices.push(Box::new(move |_u| Ok(ctx.nat())));
     choices.push(Box::new(move |_u| Ok(ctx.never())));
     choices.push(Box::new(move |_u| Ok(ctx.unit_ty())));
-    choices.push(Box::new(move |u| {
-        let user_ty = u.arbitrary()?;
-        Ok(ctx.user_ty(&user_ty))
-    }));
+    if let Some(depth) = depth.checked_sub(1) {
+        choices.push(Box::new(move |u| {
+            let tag = u.arbitrary()?;
+            let inner_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
+            Ok(inner_ty.tagged(tag))
+        }));
+    }
     if let Some(depth) = depth.checked_sub(2) {
         choices.push(Box::new(move |u| {
             let mut eq_term_0 = arbitrary_term_under_ctx_with_depth(ctx, depth, u)?;
@@ -212,18 +204,13 @@ fn arbitrary_term_under_ctx_with_depth<'a, S>(
 ) -> arbitrary::Result<Tm<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     // hack. prevent stack overflows until they're fixed.
     let depth = std::cmp::min(depth, MAX_DEPTH);
 
     let mut choices: Vec<Box<dyn Fn(&mut Unstructured<'a>) -> arbitrary::Result<Tm<S>>>>  = Vec::new();
     choices.push(Box::new(move |_u| Ok(ctx.unit_term())));
-    choices.push(Box::new(move |u| {
-        let user_term = u.arbitrary()?;
-        Ok(ctx.user_term(&user_term))
-    }));
     if let Some(depth) = depth.checked_sub(1) {
         for _ in 0..ctx.len() {
             choices.push(Box::new(move |u| {
@@ -231,6 +218,11 @@ where
                 Ok(stuck.to_term())
             }));
         }
+        choices.push(Box::new(move |u| {
+            let tag = u.arbitrary()?;
+            let inner_term = arbitrary_term_under_ctx_with_depth(ctx, depth, u)?;
+            Ok(inner_term.tagged(tag))
+        }));
         choices.push(Box::new(move |u| {
             let ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
             Ok(ty.to_term())
@@ -280,8 +272,7 @@ fn arbitrary_term_of_ty_with_depth<'a, S>(
 ) -> arbitrary::Result<Tm<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     // hack. prevent stack overflows until they're fixed.
     let depth = std::cmp::min(depth, MAX_DEPTH);
@@ -302,7 +293,12 @@ where
         None => {
             let term_opt = match ty.kind() {
                 TyKind::Stuck { .. } => None,
-                TyKind::User { .. } => None,
+                TyKind::Tagged { tag, inner_ty } => {
+                    let inner_term = {
+                        arbitrary_term_under_ctx_with_depth(&inner_ty.ctx(), depth, u)?
+                    };
+                    Some(inner_term.tagged(tag))
+                },
                 TyKind::Universe => {
                     if let Some(depth) = depth.checked_sub(1) {
                         let ty = arbitrary_ty_under_ctx_with_depth(&ty.ctx(), depth, u)?;
@@ -390,8 +386,7 @@ fn arbitrary_stuck_under_ctx_with_depth<'a, S>(
 ) -> arbitrary::Result<Stuck<S>>
 where
     S: Scheme,
-    S::UserTy: Arbitrary<'a>,
-    S::UserTm: Arbitrary<'a>,
+    S::Tag: Arbitrary<'a>,
 {
     // hack. prevent stack overflows until they're fixed.
     let depth = std::cmp::min(depth, MAX_DEPTH);
@@ -400,8 +395,11 @@ where
         let stuck = arbitrary_stuck_under_ctx_with_depth(ctx, depth, u)?;
         let term = match stuck.ty().kind() {
             TyKind::Stuck { .. } |
-            TyKind::User { .. } |
             TyKind::Universe => stuck.to_term(),
+
+            TyKind::Tagged { .. } => {
+                stuck.to_term().strip_tag()
+            },
 
             TyKind::Nat => {
                 match (u.arbitrary()?, u.arbitrary()?) {

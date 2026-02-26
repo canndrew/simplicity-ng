@@ -245,10 +245,9 @@ fn pprint_raw_ty_kind<S: Scheme>(
                 stuck = pprint_raw_stuck(raw_ctx, filter, &stuck, f),
             ])
         },
-        RawTyKind::User { user_ty } => {
-            args!(f, "user", [
-                user_ty = write!(f, "{:?}", user_ty),
-            ])
+        RawTyKind::Tagged { tag, inner_ty } => {
+            write!(f, "@{:?} ", tag)?;
+            pprint_raw_ty_kind(raw_ctx, filter, inner_ty, f)?;
         },
         RawTyKind::Universe => {
             args!(f, "universe", []);
@@ -319,11 +318,13 @@ fn pprint_raw_term_kind<S: Scheme>(
                 stuck = pprint_raw_stuck(raw_ctx, term_filter, &stuck, f),
             ]);
         },
-        RawTmKind::User { user_term } => {
-            debug_assert!(ty_filter.is_zeros());
-            args!(f, "user", [
-                user_term = write!(f, "{:?}", user_term),
-            ]);
+        RawTmKind::Tagged { tag, inner_term } => {
+            let RawTyKind::Tagged { tag: ty_tag, inner_ty } = raw_ty_kind.get_clone() else {
+                unreachable!();
+            };
+            debug_assert_eq!(tag, ty_tag);
+            write!(f, "@{:?} ", tag)?;
+            pprint_raw_term_kind(raw_ctx, ty_filter, inner_ty, term_filter, inner_term, f)?;
         },
         RawTmKind::Type { ty } => {
             debug_assert!(ty_filter.is_zeros());
@@ -427,6 +428,11 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             let index = filter.index_of_single_one().unwrap();
             write!(f, "var({})", index)?;
         },
+
+        RawStuckKind::StripTag { tag, untagged_ty: _, elim } => {
+            write!(f, "@{:?} ", tag)?;
+            pprint_raw_stuck(raw_ctx, filter, &elim, f)?;
+        }
 
         RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
             args!(f, "for_loop", [
@@ -755,6 +761,30 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                 elim = pprint_raw_stuck(raw_ctx, filter.clone(), &elim, f),
                 arg_term = pprint_raw_term(raw_ctx, arg_ty_filter, arg_ty, filter.clone(), &arg_term, f),
             ]);
+        },
+
+        RawStuckKind::TaggedEqTagInjective {
+            tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+        } => {
+            args!(f, "tagged_eq_tag_injective", [
+                tag_0 = write!(f, "{:?}", tag_0),
+                tag_1 = write!(f, "{:?}", tag_1),
+                untagged_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &untagged_ty_0, f),
+                untagged_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &untagged_ty_1, f),
+                elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
+            ])
+        },
+
+        RawStuckKind::TaggedEqInnerInjective {
+            tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
+        } => {
+            args!(f, "tagged_eq_inner_injective", [
+                tag_0 = write!(f, "{:?}", tag_0),
+                tag_1 = write!(f, "{:?}", tag_1),
+                untagged_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &untagged_ty_0, f),
+                untagged_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &untagged_ty_1, f),
+                elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
+            ])
         },
 
         RawStuckKind::EqualEqEqTyInjective {
