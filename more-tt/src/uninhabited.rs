@@ -14,9 +14,7 @@ impl<S: Scheme> Uninhabited<S> {
     ) -> Uninhabited<S> {
         let proof = ty.scope(|term| {
             let ret = proof(term);
-            let TyKind::Never = ret.ty().kind() else {
-                panic!()
-            };
+            ret.ty().unwrap_never();
             ret
         });
         Uninhabited { proof }
@@ -47,18 +45,6 @@ impl<S: Scheme> Uninhabited<S> {
                 })
             },
         )
-    }
-}
-
-impl<S: Scheme> AsTerm<S> for Uninhabited<S> {
-    fn to_term(&self) -> Tm<S> {
-        self.proof.to_term()
-    }
-
-    fn from_term(term: &Tm<S>) -> Uninhabited<S> {
-        Uninhabited {
-            proof: AsTerm::from_term(term),
-        }
     }
 }
 

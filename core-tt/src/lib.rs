@@ -12,7 +12,6 @@ mod non_zero_big_uint;
 mod usages;
 #[macro_use]
 mod util;
-mod as_term;
 mod intern;
 
 #[cfg(feature = "arbitrary")]
@@ -26,22 +25,20 @@ mod test;
 
 #[cfg(debug_assertions)]
 mod sanity_check;
-//pub mod node_stats;
 
 pub use {
     crate::{
         scheme::Scheme,
         usages::Usages,
         intern::Interner,
-        as_term::AsTerm,
         core::{
-            Contextual, Ctx,
-            DummyContextual,
+            Contextual, BundleOfContextual, Ctx,
+            NonContextual,
             Ty, Tm, Stuck,
             TyKind, TmKind, StuckKind,
             Scope,
             Nat, NatKind,
-            //ContextualTuple, Pack,
+            Name, NameKind,
         },
         non_zero_big_uint::NonZeroBigUint,
     },

@@ -60,6 +60,20 @@ where
     }
 }
 
+impl<'a, S> Arbitrary<'a> for Name<S>
+where
+    S: Scheme,
+    S::Tag: Arbitrary<'a>,
+{
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Name<S>> {
+        let depth = u.len() / 8;
+        let ctx = arbitrary_ctx_with_depth(depth.saturating_sub(2), u)?;
+        arbitrary_name_under_ctx_with_depth(&ctx, depth.saturating_sub(2), u)
+    }
+}
+
+type Choice<'c, 'a, T> = Box<dyn Fn(&mut Unstructured<'a>) -> arbitrary::Result<T> + 'c>;
+
 pub fn arbitrary_ctx<'a, S>(
     u: &mut Unstructured<'a>,
 ) -> arbitrary::Result<Ctx<S>>
@@ -119,6 +133,18 @@ where
     arbitrary_stuck_under_ctx_with_depth(&ctx, depth, u)
 }
 
+pub fn arbitrary_name_under_ctx<'a, S>(
+    ctx: &Ctx<S>,
+    u: &mut Unstructured<'a>,
+) -> arbitrary::Result<Name<S>>
+where
+    S: Scheme,
+    S::Tag: Arbitrary<'a>,
+{
+    let depth = u.len() / 5;
+    arbitrary_name_under_ctx_with_depth(&ctx, depth, u)
+}
+
 fn arbitrary_ctx_with_depth<'a, S>(
     depth: usize,
     u: &mut Unstructured<'a>,
@@ -151,18 +177,11 @@ where
     // hack. prevent stack overflows until they're fixed.
     let depth = std::cmp::min(depth, MAX_DEPTH);
 
-    let mut choices: Vec<Box<dyn Fn(&mut Unstructured<'a>) -> arbitrary::Result<Ty<S>>>>  = Vec::new();
+    let mut choices: Vec<Choice<'_, 'a, Ty<S>>> = Vec::new();
     choices.push(Box::new(move |_u| Ok(ctx.universe())));
     choices.push(Box::new(move |_u| Ok(ctx.nat())));
     choices.push(Box::new(move |_u| Ok(ctx.never())));
     choices.push(Box::new(move |_u| Ok(ctx.unit_ty())));
-    if let Some(depth) = depth.checked_sub(1) {
-        choices.push(Box::new(move |u| {
-            let tag = u.arbitrary()?;
-            let inner_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
-            Ok(inner_ty.tagged(tag))
-        }));
-    }
     if let Some(depth) = depth.checked_sub(2) {
         choices.push(Box::new(move |u| {
             let mut eq_term_0 = arbitrary_term_under_ctx_with_depth(ctx, depth, u)?;
@@ -173,23 +192,26 @@ where
             Ok(eq_term_0.equals(&eq_term_1))
         }));
         choices.push(Box::new(move |u| {
+            let lhs_name = arbitrary_name_under_ctx_with_depth(ctx, depth, u)?;
             let lhs_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
             let rhs_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
-            Ok(Ty::sum(&lhs_ty, &rhs_ty))
+            Ok(lhs_ty.sum(&lhs_name, &rhs_ty))
         }));
         choices.push(Box::new(move |u| {
+            let head_name = arbitrary_name_under_ctx_with_depth(ctx, depth, u)?;
             let head_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
             let tail_ty = head_ty.try_scope(|head_term| {
                 arbitrary_ty_under_ctx_with_depth(&head_term.ctx(), depth, u)
             })?;
-            Ok(head_ty.sigma(tail_ty.unbind()))
+            Ok(head_ty.sigma(&head_name, tail_ty.unbind()))
         }));
         choices.push(Box::new(move |u| {
+            let arg_name = arbitrary_name_under_ctx_with_depth(ctx, depth, u)?;
             let arg_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
             let res_ty = arg_ty.try_scope(|arg_term| {
                 arbitrary_ty_under_ctx_with_depth(&arg_term.ctx(), depth, u)
             })?;
-            Ok(arg_ty.pi(res_ty.unbind()))
+            Ok(arg_ty.pi(&arg_name, res_ty.unbind()))
         }));
     }
 
@@ -209,7 +231,7 @@ where
     // hack. prevent stack overflows until they're fixed.
     let depth = std::cmp::min(depth, MAX_DEPTH);
 
-    let mut choices: Vec<Box<dyn Fn(&mut Unstructured<'a>) -> arbitrary::Result<Tm<S>>>>  = Vec::new();
+    let mut choices: Vec<Choice<'_, 'a, Tm<S>>> = Vec::new();
     choices.push(Box::new(move |_u| Ok(ctx.unit_term())));
     if let Some(depth) = depth.checked_sub(1) {
         for _ in 0..ctx.len() {
@@ -218,11 +240,6 @@ where
                 Ok(stuck.to_term())
             }));
         }
-        choices.push(Box::new(move |u| {
-            let tag = u.arbitrary()?;
-            let inner_term = arbitrary_term_under_ctx_with_depth(ctx, depth, u)?;
-            Ok(inner_term.tagged(tag))
-        }));
         choices.push(Box::new(move |u| {
             let ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
             Ok(ty.to_term())
@@ -234,30 +251,34 @@ where
     }
     if let Some(depth) = depth.checked_sub(2) {
         choices.push(Box::new(move |u| {
+            let lhs_name = arbitrary_name_under_ctx_with_depth(ctx, depth, u)?;
             let lhs_term = arbitrary_term_under_ctx_with_depth(ctx, depth, u)?;
             let rhs_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
-            Ok(lhs_term.inj_lhs(&rhs_ty))
+            Ok(lhs_term.inj_lhs(&lhs_name, &rhs_ty))
         }));
         choices.push(Box::new(move |u| {
+            let lhs_name = arbitrary_name_under_ctx_with_depth(ctx, depth, u)?;
             let rhs_term = arbitrary_term_under_ctx_with_depth(ctx, depth, u)?;
             let lhs_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
-            Ok(rhs_term.inj_rhs(&lhs_ty))
+            Ok(rhs_term.inj_rhs(&lhs_name, &lhs_ty))
         }));
         choices.push(Box::new(move |u| {
+            let head_name = arbitrary_name_under_ctx_with_depth(ctx, depth, u)?;
             let head_term = arbitrary_term_under_ctx_with_depth(ctx, depth, u)?;
             let tail_term = head_term.ty().try_scope(|head_term| {
                 arbitrary_term_under_ctx_with_depth(&head_term.ctx(), depth, u)
             })?;
             let tail_ty = tail_term.map(|_head_term, term| term.ty());
             let tail_term = tail_term.bind(&head_term);
-            Ok(head_term.pair(tail_ty.unbind(), &tail_term))
+            Ok(head_term.pair(&head_name, tail_ty.unbind(), &tail_term))
         }));
         choices.push(Box::new(move |u| {
+            let arg_name = arbitrary_name_under_ctx_with_depth(ctx, depth, u)?;
             let arg_ty = arbitrary_ty_under_ctx_with_depth(ctx, depth, u)?;
             let res_term = arg_ty.try_scope(|arg_term| {
                 arbitrary_term_under_ctx_with_depth(&arg_term.ctx(), depth, u)
             })?;
-            Ok(arg_ty.func(res_term.unbind()))
+            Ok(arg_ty.func(&arg_name, res_term.unbind()))
         }));
     }
 
@@ -293,11 +314,13 @@ where
         None => {
             let term_opt = match ty.kind() {
                 TyKind::Stuck { .. } => None,
-                TyKind::Tagged { tag, inner_ty } => {
-                    let inner_term = {
-                        arbitrary_term_under_ctx_with_depth(&inner_ty.ctx(), depth, u)?
-                    };
-                    Some(inner_term.tagged(tag))
+                TyKind::Name => {
+                    if let Some(depth) = depth.checked_sub(1) {
+                        let name = arbitrary_name_under_ctx_with_depth(&ty.ctx(), depth, u)?;
+                        Some(name.to_term())
+                    } else {
+                        None
+                    }
                 },
                 TyKind::Universe => {
                     if let Some(depth) = depth.checked_sub(1) {
@@ -325,29 +348,30 @@ where
                 },
                 TyKind::Never => None,
                 TyKind::Unit => Some(ty.ctx().unit_term()),
-                TyKind::Sum { lhs_ty, rhs_ty } => {
+                TyKind::Sum { lhs_name, lhs_ty, rhs_ty } => {
                     if let Some(depth) = depth.checked_sub(1) {
                         if u.arbitrary()? {
                             Some(
                                 arbitrary_term_of_ty_with_depth(&lhs_ty, depth, u)?
-                                .inj_lhs(&rhs_ty)
+                                .inj_lhs(&lhs_name, &rhs_ty)
                             )
                         } else {
                             Some(
                                 arbitrary_term_of_ty_with_depth(&rhs_ty, depth, u)?
-                                .inj_rhs(&lhs_ty)
+                                .inj_rhs(&lhs_name, &lhs_ty)
                             )
                         }
                     } else {
                         None
                     }
                 },
-                TyKind::Sigma { tail_ty } => {
+                TyKind::Sigma { head_name, tail_ty } => {
                     if let Some(depth) = depth.checked_sub(1) {
                         let head_term = arbitrary_term_of_ty_with_depth(&tail_ty.var_ty(), depth, u)?;
                         let substituted_tail_ty = tail_ty.bind(&head_term);
                         let tail_term = arbitrary_term_of_ty_with_depth(&substituted_tail_ty, depth, u)?;
                         let term = head_term.pair(
+                            &head_name,
                             tail_ty.unbind(),
                             &tail_term,
                         );
@@ -356,12 +380,12 @@ where
                         None
                     }
                 },
-                TyKind::Pi { res_ty } => {
+                TyKind::Pi { arg_name, res_ty } => {
                     if let Some(depth) = depth.checked_sub(1) {
                         let res_term = res_ty.var_ty().try_scope(|arg_term| {
                             arbitrary_term_of_ty_with_depth(&res_ty.bind(&arg_term), depth, u)
                         })?;
-                        Some(res_ty.var_ty().func(res_term.unbind()))
+                        Some(res_ty.var_ty().func(&arg_name, res_term.unbind()))
                     } else {
                         None
                     }
@@ -395,11 +419,8 @@ where
         let stuck = arbitrary_stuck_under_ctx_with_depth(ctx, depth, u)?;
         let term = match stuck.ty().kind() {
             TyKind::Stuck { .. } |
+            TyKind::Name |
             TyKind::Universe => stuck.to_term(),
-
-            TyKind::Tagged { .. } => {
-                stuck.to_term().strip_tag()
-            },
 
             TyKind::Nat => {
                 match (u.arbitrary()?, u.arbitrary()?) {
@@ -443,26 +464,117 @@ where
                 }
             },
 
-            TyKind::Equal { eq_term_0, .. } => {
-                let motive = eq_term_0.ty().try_scope(|var_eq_term_0| {
-                    var_eq_term_0.ty().try_scope(|var_eq_term_1| {
-                        var_eq_term_0.equals(&var_eq_term_1).try_scope(|var_elim| {
-                            arbitrary_ty_under_ctx_with_depth(&var_elim.ctx(), depth, u)
+            TyKind::Equal { eq_term_0, eq_term_1 } => {
+                let mut choices: Vec<Choice<'_, 'a, Tm<S>>> = Vec::new();
+                choices.push(Box::new(|u| {
+                    let motive = eq_term_0.ty().try_scope(|var_eq_term_0| {
+                        var_eq_term_0.ty().try_scope(|var_eq_term_1| {
+                            var_eq_term_0.equals(&var_eq_term_1).try_scope(|var_elim| {
+                                arbitrary_ty_under_ctx_with_depth(&var_elim.ctx(), depth, u)
+                            })
                         })
-                    })
-                })?;
-                let inhab_ty = motive.map(|var_eq_term, inner| {
-                    inner.bind(&var_eq_term).bind(&var_eq_term.refl())
-                });
-                let inhab = inhab_ty.try_map(|_var_eq_term, ty| {
-                    arbitrary_term_of_ty_with_depth(&ty, depth, u)
-                })?;
-                stuck.to_term().cong(
-                    |var_eq_term_0, var_eq_term_1, var_elim| {
-                        motive.bind(&var_eq_term_0).bind(&var_eq_term_1).bind(&var_elim)
-                    },
-                    inhab.unbind(),
-                )
+                    })?;
+                    let inhab_ty = motive.map(|var_eq_term, inner| {
+                        inner.bind(&var_eq_term).bind(&var_eq_term.refl())
+                    });
+                    let inhab = inhab_ty.try_map(|_var_eq_term, ty| {
+                        arbitrary_term_of_ty_with_depth(&ty, depth, u)
+                    })?;
+                    Ok(stuck.to_term().cong(
+                        |var_eq_term_0, var_eq_term_1, var_elim| {
+                            motive.bind(&var_eq_term_0).bind(&var_eq_term_1).bind(&var_elim)
+                        },
+                        inhab.unbind(),
+                    ))
+                }));
+                if eq_term_0 == eq_term_1 {
+                    choices.push(Box::new(|u| {
+                        let motive = eq_term_0.ty().try_scope(|var_eq_term| {
+                            var_eq_term.equals(&var_eq_term).try_scope(|var_elim| {
+                                arbitrary_ty_under_ctx_with_depth(&var_elim.ctx(), depth, u)
+                            })
+                        })?;
+                        let inhab_ty = motive.map(|var_eq_term, inner| {
+                            inner.bind(&var_eq_term.refl())
+                        });
+                        let inhab = inhab_ty.try_map(|_, inhab_ty| {
+                            arbitrary_term_of_ty_with_depth(&inhab_ty, depth, u)
+                        })?;
+                        Ok(stuck.to_term().unique_identity(
+                            |var_eq_term, var_elim| motive.bind(&var_eq_term).bind(&var_elim),
+                            inhab.unbind(),
+                        ))
+                    }))
+                }
+
+                if let TmKind::Tag { tag: tag_0 } = eq_term_0.kind()
+                && let TmKind::Tag { tag: tag_1 } = eq_term_1.kind()
+                && tag_0 != tag_1
+                {
+                    choices.push(Box::new(|_| {
+                        Ok(stuck.to_term().tags_apart())
+                    }));
+                }
+
+                if let TmKind::Type { ty: ty_0 } = eq_term_0.kind()
+                && let TmKind::Type { ty: ty_1 } = eq_term_1.kind()
+                {
+                    match (ty_0.kind(), ty_1.kind()) {
+                        (TyKind::Equal { eq_term_0, .. }, TyKind::Equal { eq_term_1, .. }) => {
+                            choices.push(Box::new(|_| {
+                                Ok(stuck.to_term().equal_eq_eq_ty_injective())
+                            }));
+                            if eq_term_0.ty() == eq_term_1.ty() {
+                                choices.push(Box::new(|_| {
+                                    Ok(stuck.to_term().equal_eq_eq_term_0_injective())
+                                }));
+                                choices.push(Box::new(|_| {
+                                    Ok(stuck.to_term().equal_eq_eq_term_1_injective())
+                                }));
+                            }
+                        },
+                        (TyKind::Sum { .. }, TyKind::Sum { .. }) => {
+                            choices.push(Box::new(|_| {
+                                Ok(stuck.to_term().sum_eq_lhs_injective())
+                            }));
+                            choices.push(Box::new(|_| {
+                                Ok(stuck.to_term().sum_eq_rhs_injective())
+                            }));
+                        },
+                        (
+                            TyKind::Sigma { head_name: head_name_0, tail_ty: tail_ty_0 },
+                            TyKind::Sigma { head_name: head_name_1, tail_ty: tail_ty_1 },
+                        ) => {
+                            choices.push(Box::new(|_| {
+                                Ok(stuck.to_term().sigma_eq_head_injective())
+                            }));
+                            if head_name_0 == head_name_1
+                            && tail_ty_0.var_ty() == tail_ty_1.var_ty() {
+                                choices.push(Box::new(|_| {
+                                    Ok(stuck.to_term().sigma_eq_tail_injective())
+                                }));
+                            }
+                        },
+                        (
+                            TyKind::Pi { arg_name: arg_name_0, res_ty: res_ty_0 },
+                            TyKind::Pi { arg_name: arg_name_1, res_ty: res_ty_1 },
+                        ) => {
+                            choices.push(Box::new(|_| {
+                                Ok(stuck.to_term().pi_eq_arg_injective())
+                            }));
+                            if arg_name_0 == arg_name_1
+                            && res_ty_0.var_ty() == res_ty_1.var_ty()
+                            {
+                                choices.push(Box::new(|_| {
+                                    Ok(stuck.to_term().pi_eq_res_injective())
+                                }));
+                            }
+                        },
+                        _ => (),
+                    }
+                }
+                let choice = u.choose_iter(choices.into_iter())?;
+                choice(u)?
             },
 
             TyKind::Never => {
@@ -474,7 +586,7 @@ where
 
             TyKind::Unit => stuck.to_term(),
 
-            TyKind::Sum { lhs_ty, rhs_ty } => {
+            TyKind::Sum { lhs_name: _, lhs_ty, rhs_ty } => {
                 let lhs_inhab = lhs_ty.try_scope(|lhs_term| {
                     arbitrary_term_under_ctx_with_depth(&lhs_term.ctx(), depth, u)
                 })?;
@@ -497,7 +609,7 @@ where
                 )
             },
 
-            TyKind::Sigma { tail_ty: _ } => {
+            TyKind::Sigma { head_name: _, tail_ty: _ } => {
                 if u.arbitrary()? {
                     stuck.to_term().proj_head()
                 } else {
@@ -505,7 +617,7 @@ where
                 }
             },
 
-            TyKind::Pi { res_ty } => {
+            TyKind::Pi { arg_name: _, res_ty } => {
                 let arg_term = arbitrary_term_of_ty_with_depth(&res_ty.var_ty(), depth, u)?;
                 stuck.to_term().app(&arg_term)
             },
@@ -531,6 +643,332 @@ where
         Ok(stuck)
     }
 }
+
+fn arbitrary_stuck_of_ty_with_depth<'a, S>(
+    ty: &Ty<S>,
+    depth: usize,
+    u: &mut Unstructured<'a>,
+) -> arbitrary::Result<Stuck<S>>
+where
+    S: Scheme,
+    S::Tag: Arbitrary<'a>,
+{
+    // hack. prevent stack overflows until they're fixed.
+    let depth = std::cmp::min(depth, MAX_DEPTH);
+
+    if let Some(depth) = depth.checked_sub(2) && u.arbitrary()? {
+        let stuck = arbitrary_stuck_under_ctx_with_depth(&ty.ctx(), depth, u)?;
+        let term_opt = match stuck.ty().kind() {
+            TyKind::Stuck { .. } |
+            TyKind::Name |
+            TyKind::Universe => None,
+
+            TyKind::Nat => {
+                if let TyKind::Nat = ty.kind() {
+                    match (u.arbitrary()?, u.arbitrary()?) {
+                        (false, false) => {
+                            let zero_inhab = arbitrary_term_of_ty_with_depth(
+                                &ty.ctx().nat(),
+                                depth,
+                                u,
+                            )?;
+                            let succ_inhab = ty.ctx().nat().try_scope(|elim| {
+                                elim.ctx().nat().try_scope(|state| {
+                                    arbitrary_term_of_ty_with_depth(
+                                        &state.ctx().nat(),
+                                        depth,
+                                        u,
+                                    )
+                                })
+                            })?;
+                            Some(stuck.to_term().for_loop(
+                                |elim| elim.ctx().nat(),
+                                &zero_inhab,
+                                |elim, state| succ_inhab.bind(&elim).bind(&state),
+                            ))
+                        },
+                        (false, true) => {
+                            let rhs = arbitrary_term_of_ty_with_depth(&ty.ctx().nat(), depth, u)?;
+                            Some(Tm::max(&stuck.to_term(), &rhs))
+                        },
+                        (true, false) => {
+                            let rhs = arbitrary_term_of_ty_with_depth(&ty.ctx().nat(), depth, u)?;
+                            Some(stuck.to_term().add(&rhs))
+                        },
+                        (true, true) => {
+                            let rhs = arbitrary_term_of_ty_with_depth(&ty.ctx().nat(), depth, u)?;
+                            Some(stuck.to_term().mul(&rhs))
+                        },
+                    }
+                } else {
+                    let zero_inhab = arbitrary_term_of_ty_with_depth(
+                        &ty,
+                        depth,
+                        u,
+                    )?;
+                    let succ_inhab = ty.ctx().nat().try_scope(|elim| {
+                        ty.weaken_into(&elim.ctx()).try_scope(|state| {
+                            arbitrary_term_of_ty_with_depth(
+                                &ty.weaken_into(&state.ctx()),
+                                depth,
+                                u,
+                            )
+                        })
+                    })?;
+                    Some(stuck.to_term().for_loop(
+                        |_| ty.clone(),
+                        &zero_inhab,
+                        |elim, state| succ_inhab.bind(&elim).bind(&state),
+                    ))
+                }
+            },
+
+            TyKind::Equal { eq_term_0, eq_term_1 } => {
+                let mut choices: Vec<Choice<'_, 'a, Tm<S>>> = Vec::new();
+                choices.push(Box::new(|u| {
+                    let inhab = eq_term_0.ty().try_scope(|var_eq_term| {
+                        let ty = ty.weaken_into(&var_eq_term.ctx());
+                        arbitrary_term_of_ty_with_depth(&ty, depth, u)
+                    })?;
+                    Ok(stuck.to_term().cong(
+                        |_, _, _| ty.clone(),
+                        inhab.unbind(),
+                    ))
+                }));
+                if eq_term_0 == eq_term_1 {
+                    choices.push(Box::new(|u| {
+                        let inhab = eq_term_0.ty().try_scope(|var_eq_term| {
+                            let ty = ty.weaken_into(&var_eq_term.ctx());
+                            arbitrary_term_of_ty_with_depth(&ty, depth, u)
+                        })?;
+                        Ok(stuck.to_term().unique_identity(
+                            |_, _| ty.clone(),
+                            inhab.unbind(),
+                        ))
+                    }))
+                }
+
+                if let TmKind::Tag { tag: tag_0 } = eq_term_0.kind()
+                && let TmKind::Tag { tag: tag_1 } = eq_term_1.kind()
+                && tag_0 != tag_1
+                && let TyKind::Never = ty.kind()
+                {
+                    choices.push(Box::new(|_| {
+                        Ok(stuck.to_term().tags_apart())
+                    }));
+                }
+
+                if let TmKind::Type { ty: ty_0 } = eq_term_0.kind()
+                && let TmKind::Type { ty: ty_1 } = eq_term_1.kind()
+                {
+                    match (ty_0.kind(), ty_1.kind()) {
+                        (TyKind::Equal { eq_term_0, .. }, TyKind::Equal { eq_term_1, .. }) => {
+                            let injectivity = stuck.to_term().equal_eq_eq_ty_injective();
+                            if injectivity.ty() == *ty {
+                                choices.push(Box::new(move |_| {
+                                    Ok(injectivity.clone())
+                                }));
+                            }
+
+                            if eq_term_0.ty() == eq_term_1.ty() {
+                                let injectivity = stuck.to_term().equal_eq_eq_term_0_injective();
+                                if injectivity.ty() == *ty {
+                                    choices.push(Box::new(move |_| {
+                                        Ok(injectivity.clone())
+                                    }));
+                                }
+                                let injectivity = stuck.to_term().equal_eq_eq_term_1_injective();
+                                if injectivity.ty() == *ty {
+                                    choices.push(Box::new(move |_| {
+                                        Ok(injectivity.clone())
+                                    }));
+                                }
+                            }
+                        },
+                        (TyKind::Sum { .. }, TyKind::Sum { .. }) => {
+                            let injectivity = stuck.to_term().sum_eq_name_injective();
+                            if injectivity.ty() == *ty {
+                                choices.push(Box::new(move |_| {
+                                    Ok(injectivity.clone())
+                                }));
+                            }
+                            let injectivity = stuck.to_term().sum_eq_lhs_injective();
+                            if injectivity.ty() == *ty {
+                                choices.push(Box::new(move |_| {
+                                    Ok(injectivity.clone())
+                                }));
+                            }
+                            let injectivity = stuck.to_term().sum_eq_rhs_injective();
+                            if injectivity.ty() == *ty {
+                                choices.push(Box::new(move |_| {
+                                    Ok(injectivity.clone())
+                                }));
+                            }
+                        },
+                        (
+                            TyKind::Sigma { head_name: head_name_0, tail_ty: tail_ty_0 },
+                            TyKind::Sigma { head_name: head_name_1, tail_ty: tail_ty_1 },
+                        ) => {
+                            let injectivity = stuck.to_term().sigma_eq_name_injective();
+                            if injectivity.ty() == *ty {
+                                choices.push(Box::new(move |_| {
+                                    Ok(injectivity.clone())
+                                }));
+                            }
+                            let injectivity = stuck.to_term().sigma_eq_head_injective();
+                            if injectivity.ty() == *ty {
+                                choices.push(Box::new(move |_| {
+                                    Ok(injectivity.clone())
+                                }));
+                            }
+
+                            if head_name_0 == head_name_1
+                            && tail_ty_0.var_ty() == tail_ty_1.var_ty()
+                            {
+                                let injectivity = stuck.to_term().sigma_eq_tail_injective();
+                                if injectivity.ty() == *ty {
+                                    choices.push(Box::new(move |_| {
+                                        Ok(injectivity.clone())
+                                    }));
+                                }
+                            }
+                        },
+                        (
+                            TyKind::Pi { arg_name: arg_name_0, res_ty: res_ty_0 },
+                            TyKind::Pi { arg_name: arg_name_1, res_ty: res_ty_1 },
+                        ) => {
+                            let injectivity = stuck.to_term().pi_eq_name_injective();
+                            if injectivity.ty() == *ty {
+                                choices.push(Box::new(move |_| {
+                                    Ok(injectivity.clone())
+                                }));
+                            }
+                            let injectivity = stuck.to_term().pi_eq_arg_injective();
+                            if injectivity.ty() == *ty {
+                                choices.push(Box::new(move |_| {
+                                    Ok(injectivity.clone())
+                                }));
+                            }
+
+                            if arg_name_0 == arg_name_1
+                            && res_ty_0.var_ty() == res_ty_1.var_ty()
+                            {
+                                let injectivity = stuck.to_term().pi_eq_res_injective();
+                                if injectivity.ty() == *ty {
+                                    choices.push(Box::new(move |_| {
+                                        Ok(injectivity.clone())
+                                    }));
+                                }
+                            }
+                        },
+                        _ => (),
+                    }
+                }
+                let choice = u.choose_iter(choices.into_iter())?;
+                Some(choice(u)?)
+            },
+
+            TyKind::Never => {
+                Some(stuck.to_term().explode(|_| ty.clone()))
+            },
+
+            TyKind::Unit => None,
+
+            TyKind::Sum { lhs_name: _, lhs_ty, rhs_ty } => {
+                let lhs_inhab = lhs_ty.try_scope(|lhs_term| {
+                    arbitrary_term_of_ty_with_depth(&ty.weaken_into(&lhs_term.ctx()), depth, u)
+                })?;
+                let rhs_inhab = rhs_ty.try_scope(|rhs_term| {
+                    arbitrary_term_of_ty_with_depth(&ty.weaken_into(&rhs_term.ctx()), depth, u)
+                })?;
+                Some(stuck.to_term().case(
+                    |_| ty.clone(),
+                    lhs_inhab.unbind(),
+                    rhs_inhab.unbind(),
+                ))
+            },
+
+            TyKind::Sigma { head_name: _, tail_ty } => {
+                let mut choices: Vec<Choice<'_, 'a, Tm<S>>> = Vec::new();
+                if tail_ty.var_ty() == *ty {
+                    choices.push(Box::new(|_| {
+                        Ok(stuck.to_term().proj_head())
+                    }));
+                }
+                if tail_ty.bind(&stuck.to_term().proj_head()) == *ty {
+                    choices.push(Box::new(|_| {
+                        Ok(stuck.to_term().proj_tail())
+                    }));
+                }
+                let choice = u.choose_iter(choices.into_iter())?;
+                Some(choice(u)?)
+            },
+
+            TyKind::Pi { arg_name: _, res_ty } => {
+                let arg_ty = res_ty.var_ty();
+                if let Some(res_ty) = res_ty.try_strengthen() && res_ty == *ty {
+                    let arg_term = arbitrary_term_of_ty_with_depth(&arg_ty, depth, u)?;
+                    Some(stuck.to_term().app(&arg_term))
+                } else {
+                    None
+                }
+            },
+        };
+        match term_opt {
+            Some(term) => match term.kind() {
+                TmKind::Stuck { stuck } => Ok(stuck),
+                _ => Ok(stuck),
+            }
+            None => Ok(stuck),
+        }
+    } else {
+        let mut indices = Vec::new();
+        let stuck = loop {
+            let mut index = u.choose_index(ty.ctx().len() - indices.len())?;
+            for prev_index in indices.iter().copied() {
+                if index >= prev_index {
+                    index += 1;
+                }
+            }
+            if let TmKind::Stuck { stuck } = ty.ctx().var(index).kind() {
+                break stuck;
+            }
+            indices.push(index);
+        };
+        Ok(stuck)
+    }
+}
+
+fn arbitrary_name_under_ctx_with_depth<'a, S>(
+    ctx: &Ctx<S>,
+    depth: usize,
+    u: &mut Unstructured<'a>,
+) -> arbitrary::Result<Name<S>>
+where
+    S: Scheme,
+    S::Tag: Arbitrary<'a>,
+{
+    if let Some(depth) = depth.checked_sub(1) {
+        let num_name_vars = {
+            let mut ctx = ctx.clone();
+            let mut num_name_vars = 0;
+            while let Some(var_ty) = ctx.pop() {
+                if let TyKind::Name = var_ty.kind() {
+                    num_name_vars += 1;
+                }
+                ctx = var_ty.ctx();
+            }
+            num_name_vars
+        };
+        if u.choose_index(num_name_vars + 1)? > 0 {
+            let stuck = arbitrary_stuck_of_ty_with_depth(&ctx.name(), depth, u)?;
+            return Ok(stuck.to_name());
+        }
+    }
+    let tag = u.arbitrary()?;
+    Ok(ctx.tag(&tag))
+}
+
 
 
 /*

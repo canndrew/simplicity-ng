@@ -8,4 +8,5 @@ ext-trait = "*"
 core-tt = { path = "../core-tt" }
 num = "*"
 derive-where = "*"
+lazy_static = "*"
 

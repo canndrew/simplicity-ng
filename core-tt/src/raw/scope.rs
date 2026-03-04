@@ -119,8 +119,7 @@ where
         let inner = self.inner.subst(&filter, &var_term);
         if inner.usages.last() && let Some(eta_term) = var_ty.unique_eta_term_opt(&mut Vec::new()) {
             let filter = Usages::ones(inner.usages.count_ones());
-            let mut inner = inner.subst(&filter, &eta_term);
-            inner.weaken(1);
+            let inner = inner.subst(&filter, &eta_term).weaken(1);
             RawScope::new(var_ty, inner)
         } else {
             RawScope::new(var_ty, inner)
@@ -130,6 +129,11 @@ where
     fn eliminates_var(&self, index: usize) -> bool {
         self.var_ty.eliminates_var(index) ||
         self.inner.eliminates_var(index)
+    }
+
+    fn contains_subterm(&self, subterm: RawTm<S>) -> bool {
+        self.var_ty.contains_subterm(&subterm) ||
+        self.inner.contains_subterm(&subterm)
     }
 }
 
@@ -152,10 +156,10 @@ pub fn raw_scope<S: Scheme, T: Contextual<S>>(
 
     let inner = func(var_term);
 
-    let (inner_ctx, mut inner) = inner.into_raw();
+    let (inner_ctx, inner) = inner.into_raw();
     let diff = (ctx_len + 1).strict_sub(inner_ctx.len());
     assert_eq!(raw_ctx.nth_parent(diff), &inner_ctx.raw_ctx);
-    inner.weaken(diff);
+    let inner = inner.weaken(diff);
 
     RawScope::new(var_ty.clone(), inner)
 }
@@ -191,10 +195,10 @@ pub fn raw_scope_2<S: Scheme, T: Contextual<S>>(
 
     let inner = func(var_term_0, var_term_1);
 
-    let (inner_ctx, mut inner) = inner.into_raw();
+    let (inner_ctx, inner) = inner.into_raw();
     let diff = (ctx_len + 2).strict_sub(inner_ctx.len());
     assert_eq!(raw_ctx.nth_parent(diff), &inner_ctx.raw_ctx);
-    inner.weaken(diff);
+    let inner = inner.weaken(diff);
 
     RawScope::new(
         var_ty_0.clone(),
@@ -252,10 +256,10 @@ pub fn raw_scope_3<S: Scheme, T: Contextual<S>>(
 
     let inner = func(var_term_0, var_term_1, var_term_2);
 
-    let (inner_ctx, mut inner) = inner.into_raw();
+    let (inner_ctx, inner) = inner.into_raw();
     let diff = (ctx_len + 3).strict_sub(inner_ctx.len());
     assert_eq!(raw_ctx.nth_parent(diff), &inner_ctx.raw_ctx);
-    inner.weaken(diff);
+    let inner = inner.weaken(diff);
 
     RawScope::new(
         var_ty_0.clone(),
@@ -301,10 +305,10 @@ where
         },
         ControlFlow::Continue(inner) => {
             let raw_scope = {
-                let (inner_ctx, mut inner) = inner.into_raw();
+                let (inner_ctx, inner) = inner.into_raw();
                 let diff = (ctx_len + 1).strict_sub(inner_ctx.len());
                 assert_eq!(raw_ctx.nth_parent(diff), &inner_ctx.raw_ctx);
-                inner.weaken(diff);
+                let inner = inner.weaken(diff);
                 RawScope::new(var_ty.clone(), inner)
             };
             <

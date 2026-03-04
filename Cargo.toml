@@ -8,6 +8,6 @@ members = [
     "parser",
     "small-bit-vec",
     "small-bit-vec/fuzz",
-    "debug", "inference",
+    "debug", "elaborate",
 ]
 

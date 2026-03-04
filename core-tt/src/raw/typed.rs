@@ -33,6 +33,11 @@ where
         self.raw_ty.eliminates_var(index) ||
         self.inner.eliminates_var(index)
     }
+
+    fn contains_subterm(&self, subterm: RawTm<S>) -> bool {
+        self.raw_ty.contains_subterm(&subterm) ||
+        self.inner.contains_subterm(&subterm)
+    }
 }
 
 impl<S: Scheme, T> RawTyped<S, T> {

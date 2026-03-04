@@ -1,20 +1,26 @@
 use crate::priv_prelude::*;
 
-#[derive_where(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive_where(Clone)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Tm<S: Scheme> {
     pub(crate) raw_ctx: RawCtx<S>,
     pub(crate) raw_typed_term: RawTyped<S, Intern<RawTmKind<S>>>,
 }
 
-#[derive_where(Clone)]
+impl<S: Scheme> PartialEq for Tm<S> {
+    fn eq(&self, other: &Tm<S>) -> bool {
+        let (_, (term_0, term_1)) = merge_ctxs((self, other));
+        term_0 == term_1
+    }
+}
+
+#[derive_where(Clone, Debug)]
 pub enum TmKind<S: Scheme> {
     Stuck {
         stuck: Stuck<S>,
     },
-    Tagged {
+    Tag {
         tag: S::Tag,
-        inner_term: Tm<S>,
     },
     Type {
         ty: Ty<S>,
@@ -29,19 +35,23 @@ pub enum TmKind<S: Scheme> {
     },
     Unit,
     InjLhs {
+        lhs_name: Name<S>,
         lhs_term: Tm<S>,
         rhs_ty: Ty<S>,
     },
     InjRhs {
+        lhs_name: Name<S>,
         rhs_term: Tm<S>,
         lhs_ty: Ty<S>,
     },
     Pair {
+        head_name: Name<S>,
         tail_ty: Scope<S, Ty<S>>,
         head_term: Tm<S>,
         tail_term: Tm<S>,
     },
     Func {
+        arg_name: Name<S>,
         res_term: Scope<S, Tm<S>>,
     },
 }
@@ -69,6 +79,10 @@ impl<S: Scheme> Contextual<S> for Tm<S> {
 
     fn eliminates_var(&self, index: usize) -> bool {
         self.raw_typed_term.eliminates_var(index)
+    }
+
+    fn contains_subterm(&self, subterm: &RawTm<S>) -> bool {
+        self.raw_typed_term.contains_subterm(subterm)
     }
 }
 
@@ -111,20 +125,8 @@ impl<S: Scheme> Tm<S> {
                 };
                 TmKind::Stuck { stuck }
             },
-            RawTmKind::Tagged { tag, inner_term } => {
-                let RawTyKind::Tagged { tag: ty_tag, inner_ty } = raw_ty.weak.get_clone() else {
-                    unreachable!();
-                };
-                debug_assert_eq!(tag, ty_tag);
-
-                let inner_ty = Weaken { usages: raw_ty.usages.clone(), weak: inner_ty };
-                let inner_term = Weaken { usages: raw_term.usages.clone(), weak: inner_term };
-                let inner_term = Tm {
-                    raw_ctx: raw_ctx.clone(),
-                    raw_typed_term: RawTyped::from_parts(inner_ty, inner_term),
-                };
-
-                TmKind::Tagged { tag, inner_term }
+            RawTmKind::Tag { tag } => {
+                TmKind::Tag { tag }
             },
             RawTmKind::Type { ty } => {
                 let ty = ty.clone_unfilter(&raw_term.usages);
@@ -161,12 +163,17 @@ impl<S: Scheme> Tm<S> {
             },
             RawTmKind::Unit => TmKind::Unit,
             RawTmKind::InjLhs { lhs_term } => {
-                let RawTyKind::Sum { lhs_ty, rhs_ty } = raw_ty.weak.get_clone() else {
+                let RawTyKind::Sum { lhs_name, lhs_ty, rhs_ty } = raw_ty.weak.get_clone() else {
                     unreachable!();
                 };
 
+                let lhs_name = lhs_name.clone_unfilter(&raw_ty.usages);
                 let lhs_term = lhs_term.clone_unfilter(&raw_term.usages);
                 let lhs_ty = lhs_ty.clone_unfilter(&raw_ty.usages);
+                let lhs_name = Name {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_name: lhs_name,
+                };
                 let lhs_term = Tm {
                     raw_ctx: raw_ctx.clone(),
                     raw_typed_term: RawTyped::from_parts(lhs_ty, lhs_term),
@@ -176,15 +183,20 @@ impl<S: Scheme> Tm<S> {
                     raw_ctx: raw_ctx.clone(),
                     raw_ty: rhs_ty,
                 };
-                TmKind::InjLhs { lhs_term, rhs_ty }
+                TmKind::InjLhs { lhs_name, lhs_term, rhs_ty }
             },
             RawTmKind::InjRhs { rhs_term } => {
-                let RawTyKind::Sum { lhs_ty, rhs_ty } = raw_ty.weak.get_clone() else {
+                let RawTyKind::Sum { lhs_name, lhs_ty, rhs_ty } = raw_ty.weak.get_clone() else {
                     unreachable!();
                 };
 
+                let lhs_name = lhs_name.clone_unfilter(&raw_ty.usages);
                 let rhs_term = rhs_term.clone_unfilter(&raw_term.usages);
                 let rhs_ty = rhs_ty.clone_unfilter(&raw_ty.usages);
+                let lhs_name = Name {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_name: lhs_name,
+                };
                 let rhs_term = Tm {
                     raw_ctx: raw_ctx.clone(),
                     raw_typed_term: RawTyped::from_parts(rhs_ty, rhs_term),
@@ -194,18 +206,29 @@ impl<S: Scheme> Tm<S> {
                     raw_ctx: raw_ctx.clone(),
                     raw_ty: lhs_ty,
                 };
-                TmKind::InjRhs { rhs_term, lhs_ty }
+                TmKind::InjRhs { lhs_name, rhs_term, lhs_ty }
             },
-            RawTmKind::Pair { head_term, tail_term } => {
-                let RawTyKind::Sigma { tail_ty } = raw_ty.weak.get_clone() else {
+            RawTmKind::Pair { head_name, head_term, tail_term } => {
+                let RawTyKind::Sigma {
+                    head_name: ty_head_name, tail_ty,
+                } = raw_ty.weak.get_clone() else {
                     unreachable!();
                 };
+                debug_assert_eq!(
+                    head_name.clone_unfilter(&raw_term.usages),
+                    ty_head_name.clone_unfilter(&raw_ty.usages),
+                );
 
+                let head_name = head_name.clone_unfilter(&raw_term.usages);
                 let head_term = head_term.clone_unfilter(&raw_term.usages);
                 let tail_term = tail_term.clone_unfilter(&raw_term.usages);
                 let tail_ty = tail_ty.clone_unfilter(&raw_ty.usages);
                 let head_ty = tail_ty.var_ty_unfiltered();
 
+                let head_name = Name {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_name: head_name,
+                };
                 let tail_term = Tm {
                     raw_ctx: raw_ctx.clone(),
                     raw_typed_term: RawTyped::from_parts(tail_ty.clone().bind(&head_term), tail_term),
@@ -218,35 +241,39 @@ impl<S: Scheme> Tm<S> {
                     raw_ctx: raw_ctx.clone(),
                     raw_scope: tail_ty,
                 };
-                TmKind::Pair { tail_ty, head_term, tail_term }
+                TmKind::Pair { head_name, tail_ty, head_term, tail_term }
             },
-            RawTmKind::Func { res_term } => {
-                let RawTyKind::Pi { res_ty } = raw_ty.weak.get_clone() else {
+            RawTmKind::Func { arg_name, res_term } => {
+                let RawTyKind::Pi {
+                    arg_name: ty_arg_name, res_ty,
+                } = raw_ty.weak.get_clone() else {
                     unreachable!();
                 };
+                debug_assert_eq!(
+                    arg_name.clone_unfilter(&raw_term.usages),
+                    ty_arg_name.unfilter(&raw_ty.usages),
+                );
 
+                let arg_name = arg_name.clone_unfilter(&raw_term.usages);
                 let res_term = res_term.clone_unfilter(&raw_term.usages);
                 let res_ty = res_ty.clone_unfilter(&raw_ty.usages);
 
+                let arg_name = Name {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_name: arg_name,
+                };
                 let res_term = RawScope::from_parts_1(res_ty, res_term);
                 let res_term = Scope {
                     raw_ctx: raw_ctx.clone(),
                     raw_scope: res_term,
                 };
-                TmKind::Func { res_term }
+                TmKind::Func { arg_name, res_term }
             },
         }
     }
 
     pub fn contains_var(&self, index: usize) -> bool {
         self.raw_typed_term.usages[index]
-    }
-
-    pub fn zero() -> Tm<S> {
-        Tm {
-            raw_ctx: RawCtx::root(),
-            raw_typed_term: RawTyped::from_parts(RawTy::never(0), RawTm::zero(0)),
-        }
     }
 
     pub fn succs(&self, count: impl Into<BigUint>) -> Tm<S> {
@@ -273,7 +300,7 @@ impl<S: Scheme> Tm<S> {
     }
 
     pub fn max(&self, rhs: &Tm<S>) -> Tm<S> {
-        let (Ctx { raw_ctx }, lhs_term, rhs_term) = Ctx::merge_into_ctx_2(self, rhs);
+        let (Ctx { raw_ctx }, (lhs_term, rhs_term)) = merge_ctxs((self, rhs));
 
         let (lhs_ty, lhs_term) = lhs_term.into_parts();
         let (rhs_ty, rhs_term) = rhs_term.into_parts();
@@ -301,7 +328,7 @@ impl<S: Scheme> Tm<S> {
     }
 
     pub fn add(&self, rhs: &Tm<S>) -> Tm<S> {
-        let (Ctx { raw_ctx }, lhs_term, rhs_term) = Ctx::merge_into_ctx_2(self, rhs);
+        let (Ctx { raw_ctx }, (lhs_term, rhs_term)) = merge_ctxs((self, rhs));
 
         let (lhs_ty, lhs_term) = lhs_term.into_parts();
         let (rhs_ty, rhs_term) = rhs_term.into_parts();
@@ -329,7 +356,7 @@ impl<S: Scheme> Tm<S> {
     }
 
     pub fn mul(&self, rhs: &Tm<S>) -> Tm<S> {
-        let (Ctx { raw_ctx }, lhs_term, rhs_term) = Ctx::merge_into_ctx_2(self, rhs);
+        let (Ctx { raw_ctx }, (lhs_term, rhs_term)) = merge_ctxs((self, rhs));
 
         let (lhs_ty, lhs_term) = lhs_term.into_parts();
         let (rhs_ty, rhs_term) = rhs_term.into_parts();
@@ -360,7 +387,7 @@ impl<S: Scheme> Tm<S> {
         let eq_term_0 = self;
         let eq_term_1 = other;
 
-        let (ctx, eq_term_0, eq_term_1) = Ctx::merge_into_ctx_2(eq_term_0, eq_term_1);
+        let (ctx, (eq_term_0, eq_term_1)) = merge_ctxs((eq_term_0, eq_term_1));
         let (eq_ty_0, eq_term_0) = eq_term_0.into_parts();
         let (eq_ty_1, eq_term_1) = eq_term_1.into_parts();
         let Some(eq_ty) = as_equal(eq_ty_0, eq_ty_1) else {
@@ -393,30 +420,23 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
-    pub fn unit() -> Tm<S> {
-        Tm {
-            raw_ctx: RawCtx::root(),
-            raw_typed_term: RawTyped::from_parts(RawTy::unit(0), RawTm::unit(0)),
-        }
-    }
-
-    pub fn inj_lhs(&self, rhs_ty: &Ty<S>) -> Tm<S> {
+    pub fn inj_lhs(&self, lhs_name: &Name<S>, rhs_ty: &Ty<S>) -> Tm<S> {
         let lhs_term = self;
         
-        let (ctx, lhs_term, rhs_ty) = Ctx::merge_into_ctx_2(lhs_term, rhs_ty);
+        let (ctx, (lhs_name, lhs_term, rhs_ty)) = merge_ctxs((lhs_name, lhs_term, rhs_ty));
         let (lhs_ty, lhs_term) = lhs_term.into_parts();
-        let ty = RawTy::sum(lhs_ty, rhs_ty);
+        let ty = RawTy::sum(lhs_name, lhs_ty, rhs_ty);
         let term = RawTm::inj_lhs(lhs_term);
         let term = RawTyped::from_parts(ty, term);
         Tm { raw_ctx: ctx.raw_ctx, raw_typed_term: term }
     }
 
-    pub fn inj_rhs(&self, lhs_ty: &Ty<S>) -> Tm<S> {
+    pub fn inj_rhs(&self, lhs_name: &Name<S>, lhs_ty: &Ty<S>) -> Tm<S> {
         let rhs_term = self;
         
-        let (ctx, lhs_ty, rhs_term) = Ctx::merge_into_ctx_2(lhs_ty, rhs_term);
+        let (ctx, (lhs_name, lhs_ty, rhs_term)) = merge_ctxs((lhs_name, lhs_ty, rhs_term));
         let (rhs_ty, rhs_term) = rhs_term.into_parts();
-        let ty = RawTy::sum(lhs_ty, rhs_ty);
+        let ty = RawTy::sum(lhs_name, lhs_ty, rhs_ty);
         let term = RawTm::inj_rhs(rhs_term);
         let term = RawTyped::from_parts(ty, term);
         Tm { raw_ctx: ctx.raw_ctx, raw_typed_term: term }
@@ -424,12 +444,15 @@ impl<S: Scheme> Tm<S> {
 
     pub fn pair(
         &self,
+        head_name: &Name<S>,
         tail_ty: impl FnOnce(Tm<S>) -> Ty<S>,
         tail_term: &Tm<S>,
     ) -> Tm<S> {
         let head_term = self;
         
-        let (ctx, head_term, tail_term) = Ctx::merge_into_ctx_2(head_term, tail_term);
+        let (ctx, (head_name, head_term, tail_term)) = merge_ctxs((
+            head_name, head_term, tail_term,
+        ));
         let (head_ty, head_term) = head_term.into_parts();
         let tail_ty = raw_scope(&ctx.raw_ctx, &head_ty, tail_ty);
         let tail_term = {
@@ -455,13 +478,26 @@ impl<S: Scheme> Tm<S> {
             tail_term
         };
 
-        let ty = RawTy::sigma(tail_ty);
-        let term = RawTm::pair(head_term, tail_term);
+        let ty = RawTy::sigma(head_name.clone(), tail_ty);
+        let term = RawTm::pair(head_name, head_term, tail_term);
         let term = RawTyped::from_parts(ty, term);
 
         Tm {
             raw_ctx: ctx.raw_ctx,
             raw_typed_term: term,
+        }
+    }
+
+    pub fn to_name(&self) -> Name<S> {
+        let Tm { raw_ctx, raw_typed_term } = self;
+        let (raw_ty, raw_term) = raw_typed_term.to_parts();
+        let RawTyKind::Name = raw_ty.weak.get_clone() else {
+            panic!("term is not a name: {:#?}", raw_ty.weak);
+        };
+        let raw_name = RawName::from_term(raw_term);
+        Name {
+            raw_ctx: raw_ctx.clone(),
+            raw_name,
         }
     }
 
@@ -480,7 +516,7 @@ impl<S: Scheme> Tm<S> {
 
     pub fn to_scope(&self) -> Scope<S, Tm<S>> {
         let ty = self.ty();
-        let RawTyKind::Pi { res_ty } = ty.raw_ty.weak.get_clone() else {
+        let RawTyKind::Pi { arg_name: _, res_ty } = ty.raw_ty.weak.get_clone() else {
             panic!(
                 "to_scope(): self is not a function.\n\
                 self.ty(): {:?}",
@@ -502,7 +538,7 @@ impl<S: Scheme> Tm<S> {
         zero_inhab: &Tm<S>,
         succ_inhab: impl FnOnce(Tm<S>, Tm<S>) -> Tm<S>,
     ) -> Tm<S> {
-        let (Ctx { raw_ctx }, elim, zero_inhab) = Ctx::merge_into_ctx_2(self, zero_inhab);
+        let (Ctx { raw_ctx }, (elim, zero_inhab)) = merge_ctxs((self, zero_inhab));
         let ctx_len = raw_ctx.len();
         let (raw_ty, raw_term) = elim.to_parts();
         let RawTyKind::Nat = raw_ty.weak.get_clone() else {
@@ -606,9 +642,13 @@ impl<S: Scheme> Tm<S> {
                     raw_ctx: raw_ctx.clone(),
                     raw_scope: actual_inhab_ty,
                 };
-                println!("expected inhab ty == {:?}", expected_inhab_ty);
-                println!("actual inhab ty == {:?}", actual_inhab_ty);
-                panic!("type mismatch");
+                panic!(
+                    "cong(): inhab type doesn't match motive.\n\
+                    expected inhab ty == {:?}\n\
+                    actual inhab ty == {:?}",
+                    expected_inhab_ty,
+                    actual_inhab_ty,
+                );
             }
             inhab
         };
@@ -730,13 +770,14 @@ impl<S: Scheme> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
-        let RawTyKind::Sum { lhs_ty, rhs_ty } = raw_ty.weak.get_clone() else {
+        let RawTyKind::Sum { lhs_name, lhs_ty, rhs_ty } = raw_ty.weak.get_clone() else {
             panic!(
                 "case(): self is not a sum.\n\
                 self.ty(): {:?}",
                 self.ty(),
             );
         };
+        let lhs_name = lhs_name.clone_unfilter(&raw_ty.usages);
         let lhs_ty = lhs_ty.clone_unfilter(&raw_ty.usages);
         let rhs_ty = rhs_ty.clone_unfilter(&raw_ty.usages);
 
@@ -751,7 +792,23 @@ impl<S: Scheme> Tm<S> {
                 .clone_weaken(1)
                 .bind(&RawTm::inj_lhs(RawTm::var(ctx_len + 1, ctx_len, &lhs_ty))),
             );
-            assert_eq!(actual_lhs_inhab_ty, expected_lhs_inhab_ty);
+            if actual_lhs_inhab_ty != expected_lhs_inhab_ty {
+                let actual_lhs_inhab_ty: Scope<S, Ty<S>> = Scope {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_scope: actual_lhs_inhab_ty,
+                };
+                let expected_lhs_inhab_ty: Scope<S, Ty<S>> = Scope {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_scope: expected_lhs_inhab_ty,
+                };
+                panic!(
+                    "case(): type of lhs branch does not match motive\n\
+                    type of lhs branch: {:?}\n\
+                    type of substituted motive: {:?}",
+                    actual_lhs_inhab_ty,
+                    expected_lhs_inhab_ty,
+                );
+            }
             lhs_inhab
         };
 
@@ -764,14 +821,30 @@ impl<S: Scheme> Tm<S> {
                 .clone_weaken(1)
                 .bind(&RawTm::inj_rhs(RawTm::var(ctx_len + 1, ctx_len, &rhs_ty))),
             );
-            assert_eq!(actual_rhs_inhab_ty, expected_rhs_inhab_ty);
+            if actual_rhs_inhab_ty != expected_rhs_inhab_ty {
+                let actual_rhs_inhab_ty: Scope<S, Ty<S>> = Scope {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_scope: actual_rhs_inhab_ty,
+                };
+                let expected_rhs_inhab_ty: Scope<S, Ty<S>> = Scope {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_scope: expected_rhs_inhab_ty,
+                };
+                panic!(
+                    "case(): type of rhs branch does not match motive\n\
+                    type of rhs branch: {:?}\n\
+                    type of substituted motive: {:?}",
+                    actual_rhs_inhab_ty,
+                    expected_rhs_inhab_ty,
+                );
+            }
             rhs_inhab
         };
 
         let ty = motive.clone().bind(&raw_term);
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::case(raw_term, motive, lhs_inhab, rhs_inhab),
+            None => RawTm::case(lhs_name, raw_term, motive, lhs_inhab, rhs_inhab),
         };
         let term = RawTyped::from_parts(ty, term);
 
@@ -784,20 +857,21 @@ impl<S: Scheme> Tm<S> {
     pub fn proj_head(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
-        let RawTyKind::Sigma { tail_ty } = raw_ty.weak.get_clone() else {
+        let RawTyKind::Sigma { head_name, tail_ty } = raw_ty.weak.get_clone() else {
             panic!(
                 "proj_head(): self is not a sigma.\n\
                 self.ty(): {:?}",
                 self.ty(),
             );
         };
+        let head_name = head_name.clone_unfilter(&raw_ty.usages);
         let tail_ty = tail_ty.clone_unfilter(&raw_ty.usages);
         let head_ty = tail_ty.var_ty_unfiltered();
 
         let ty = head_ty;
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::proj_head(tail_ty, raw_term),
+            None => RawTm::proj_head(head_name, tail_ty, raw_term),
         };
         let term = RawTyped::from_parts(ty, term);
         Tm {
@@ -809,22 +883,25 @@ impl<S: Scheme> Tm<S> {
     pub fn proj_tail(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
-        let RawTyKind::Sigma { tail_ty } = raw_ty.weak.get_clone() else {
+        let RawTyKind::Sigma { head_name, tail_ty } = raw_ty.weak.get_clone() else {
             panic!(
                 "proj_tail(): self is not a sigma.\n\
                 self.ty(): {:?}",
                 self.ty(),
             );
         };
+        let head_name = head_name.clone_unfilter(&raw_ty.usages);
         let tail_ty = tail_ty.clone_unfilter(&raw_ty.usages);
 
         let ty = {
-            let head_term = RawTm::proj_head(tail_ty.clone(), raw_term.clone());
+            let head_term = RawTm::proj_head(
+                head_name.clone(), tail_ty.clone(), raw_term.clone(),
+            );
             tail_ty.clone().bind(&head_term)
         };
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::proj_tail(tail_ty, raw_term),
+            None => RawTm::proj_tail(head_name, tail_ty, raw_term),
         };
         let term = RawTyped::from_parts(ty, term);
         Tm {
@@ -837,11 +914,12 @@ impl<S: Scheme> Tm<S> {
         &self,
         arg_term: &Tm<S>,
     ) -> Tm<S> {
-        let (Ctx { raw_ctx }, elim, arg_term) = Ctx::merge_into_ctx_2(self, arg_term);
+        let (Ctx { raw_ctx }, (elim, arg_term)) = merge_ctxs((self, arg_term));
         let (raw_ty, raw_term) = elim.into_parts();
-        let RawTyKind::Pi { res_ty } = raw_ty.weak.get_clone() else {
+        let RawTyKind::Pi { arg_name, res_ty } = raw_ty.weak.get_clone() else {
             panic!("app(): {:#?} is not a function", self);
         };
+        let arg_name = arg_name.clone_unfilter(&raw_ty.usages);
         let res_ty = res_ty.clone_unfilter(&raw_ty.usages);
         let arg_ty = res_ty.var_ty_unfiltered();
         
@@ -870,7 +948,7 @@ impl<S: Scheme> Tm<S> {
         let ty = res_ty.clone().bind(&arg_term);
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::app(res_ty, raw_term, arg_term),
+            None => RawTm::app(arg_name, res_ty, raw_term, arg_term),
         };
         let term = RawTyped::from_parts(ty, term);
         Tm {
@@ -879,161 +957,46 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
-    pub fn tagged_eq_tag_injective(&self) -> Tm<S> {
+    pub fn tags_apart(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
+
         let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
             panic!(
-                "tagged_eq_tag_injective(): self is not an equality.\n\
+                "tags_apart(): self is not an equality.\n\
                 self.ty(): {:?}",
                 self.ty(),
             );
         };
-        let RawTyKind::Universe = eq_ty.weak.get_clone() else {
+        let RawTyKind::Name = eq_ty.weak.get_clone() else {
             panic!(
-                "tagged_eq_tag_injective(): self is not an equality between types.\n\
+                "tags_apart(): self is not an equality between names.\n\
                 self.ty(): {:?}",
                 self.ty(),
             );
         };
-        let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
+        let RawTmKind::Tag { tag: tag_0 } = eq_term_0.weak.get_clone() else {
             panic!(
-                "tagged_eq_tag_injective(): type on left side of equality\
-                is not a tagged type.\n\
+                "tags_apart(): name on left side of equality is not a constant\n\
                 self.ty(): {:?}",
                 self.ty(),
             );
         };
-        let RawTyKind::Tagged { tag: tag_0, inner_ty: inner_ty_0 } = ty_0.weak.get_clone() else {
+        let RawTmKind::Tag { tag: tag_1 } = eq_term_1.weak.get_clone() else {
             panic!(
-                "tagged_eq_tag_injective(): type on left side of equality\
-                is not a tagged type.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-        let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
-            panic!(
-                "tagged_eq_tag_injective(): type on right side of equality\
-                is not a tagged type.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-        let RawTyKind::Tagged { tag: tag_1, inner_ty: inner_ty_1 } = ty_1.weak.get_clone() else {
-            panic!(
-                "tagged_eq_tag_injective(): type on right side of equality\
-                is not a tagged type.\n\
+                "tags_apart(): name on left side of equality is not a constant\n\
                 self.ty(): {:?}",
                 self.ty(),
             );
         };
 
-        let inner_ty_0 = {
-            Weaken { usages: ty_0.usages, weak: inner_ty_0 }
-            .unfilter(&eq_term_0.usages)
-            .unfilter(&raw_ty.usages)
-        };
-        let inner_ty_1 = {
-            Weaken { usages: ty_1.usages, weak: inner_ty_1 }
-            .unfilter(&eq_term_0.usages)
-            .unfilter(&raw_ty.usages)
-        };
-
-        let ty = if tag_0 == tag_1 {
-            RawTy::unit(ctx_len)
-        } else {
-            RawTy::never(ctx_len)
-        };
-        let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
-            Some(eta_term) => eta_term,
-            None => RawTm::tagged_eq_tag_injective(
-                tag_0, tag_1, inner_ty_0, inner_ty_1, raw_term,
-            ),
-        };
-        let term = RawTyped::from_parts(ty, term);
-        Tm { 
-            raw_ctx: raw_ctx.clone(),
-            raw_typed_term: term,
-        }
-    }
-
-    pub fn tagged_eq_inner_injective(&self) -> Tm<S> {
-        let Tm { raw_ctx, raw_typed_term } = self;
-        let ctx_len = raw_typed_term.usages.len();
-        let (raw_ty, raw_term) = raw_typed_term.to_parts();
-        let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
-            panic!(
-                "tagged_eq_inner_injective(): self is not an equality.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-        let RawTyKind::Universe = eq_ty.weak.get_clone() else {
-            panic!(
-                "tagged_eq_inner_injective(): self is not an equality between types.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-        let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
-            panic!(
-                "tagged_eq_inner_injective(): type on left side of equality\
-                is not a tagged type.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-        let RawTyKind::Tagged { tag: tag_0, inner_ty: inner_ty_0 } = ty_0.weak.get_clone() else {
-            panic!(
-                "tagged_eq_inner_injective(): type on left side of equality\
-                is not a tagged type.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-        let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
-            panic!(
-                "tagged_eq_inner_injective(): type on right side of equality\
-                is not a tagged type.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-        let RawTyKind::Tagged { tag: tag_1, inner_ty: inner_ty_1 } = ty_1.weak.get_clone() else {
-            panic!(
-                "tagged_eq_inner_injective(): type on right side of equality\
-                is not a tagged type.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-
-        let inner_ty_0 = {
-            Weaken { usages: ty_0.usages, weak: inner_ty_0 }
-            .unfilter(&eq_term_0.usages)
-            .unfilter(&raw_ty.usages)
-        };
-        let inner_ty_1 = {
-            Weaken { usages: ty_1.usages, weak: inner_ty_1 }
-            .unfilter(&eq_term_0.usages)
-            .unfilter(&raw_ty.usages)
-        };
-
-        let ty = RawTy::equal(
-            RawTy::universe(ctx_len),
-            RawTm::from_ty(inner_ty_0.clone()),
-            RawTm::from_ty(inner_ty_1.clone()),
+        let ty = RawTy::never(ctx_len);
+        let term = RawTyped::from_parts(
+            ty,
+            RawTm::tags_apart(tag_0, tag_1, raw_term),
         );
-        let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
-            Some(eta_term) => eta_term,
-            None => RawTm::tagged_eq_inner_injective(
-                tag_0, tag_1, inner_ty_0, inner_ty_1, raw_term,
-            ),
-        };
-        let term = RawTyped::from_parts(ty, term);
-        Tm { 
+        Tm {
             raw_ctx: raw_ctx.clone(),
             raw_typed_term: term,
         }
@@ -1058,7 +1021,12 @@ impl<S: Scheme> Tm<S> {
             );
         };
         let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
-            unreachable!();
+            panic!(
+                "equal_eq_eq_ty_injective(): type on left side of equality\
+                is not known to be an equality.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
         };
         let RawTyKind::Equal {
             eq_ty: eq_ty_0, eq_term_0: eq_term_0_0, eq_term_1: eq_term_1_0,
@@ -1071,7 +1039,12 @@ impl<S: Scheme> Tm<S> {
             );
         };
         let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
-            unreachable!();
+            panic!(
+                "equal_eq_eq_ty_injective(): type on right side of equality\
+                is not known to be an equality.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
         };
         let RawTyKind::Equal {
             eq_ty: eq_ty_1, eq_term_0: eq_term_0_1, eq_term_1: eq_term_1_1,
@@ -1142,7 +1115,9 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
-    pub fn equal_eq_eq_term_0_injective(&self) -> Tm<S> {
+    pub fn equal_eq_eq_term_0_injective(
+        &self,
+    ) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
         let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
@@ -1190,14 +1165,21 @@ impl<S: Scheme> Tm<S> {
             eq_ty_0
             .unfilter(&ty_0.usages)
             .unfilter(&eq_term_0.usages)
-            .unfilter(&raw_ty.usages)
         };
         let eq_ty_1 = {
             eq_ty_1
             .unfilter(&ty_1.usages)
             .unfilter(&eq_term_1.usages)
-            .unfilter(&raw_ty.usages)
         };
+        let Some(eq_ty) = as_equal(eq_ty_0, eq_ty_1) else {
+            panic!(
+                "equal_eq_eq_term_0_injective(): types of equal terms are not equal.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let eq_ty = eq_ty.unfilter(&raw_ty.usages);
+
         let eq_term_0_0 = {
             eq_term_0_0
             .unfilter(&ty_0.usages)
@@ -1223,38 +1205,30 @@ impl<S: Scheme> Tm<S> {
             .unfilter(&raw_ty.usages)
         };
 
-        let ty = RawTy::heterogeneous_equal(
-            eq_ty_0.clone(),
-            eq_ty_1.clone(),
-            RawTm::equal_eq_eq_ty_injective(
-                eq_ty_0.clone(), eq_ty_1.clone(),
-                eq_term_0_0.clone(), eq_term_0_1.clone(),
-                eq_term_1_0.clone(), eq_term_1_1.clone(),
-                raw_term.clone(),
-            ),
+        let ty = RawTy::equal(
+            eq_ty.clone(),
             eq_term_0_0.clone(),
             eq_term_0_1.clone(),
         );
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
             None => RawTm::equal_eq_eq_term_0_injective(
-                eq_ty_0, eq_ty_1,
+                eq_ty,
                 eq_term_0_0, eq_term_0_1,
                 eq_term_1_0, eq_term_1_1,
                 raw_term,
             ),
         };
         let term = RawTyped::from_parts(ty, term);
-        let ret = Tm {
+        Tm {
             raw_ctx: raw_ctx.clone(),
             raw_typed_term: term,
-        };
-        // TODO: remove
-        ret.sanity_check();
-        ret
+        }
     }
 
-    pub fn equal_eq_eq_term_1_injective(&self) -> Tm<S> {
+    pub fn equal_eq_eq_term_1_injective(
+        &self,
+    ) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
         let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
@@ -1302,14 +1276,21 @@ impl<S: Scheme> Tm<S> {
             eq_ty_0
             .unfilter(&ty_0.usages)
             .unfilter(&eq_term_0.usages)
-            .unfilter(&raw_ty.usages)
         };
         let eq_ty_1 = {
             eq_ty_1
             .unfilter(&ty_1.usages)
             .unfilter(&eq_term_1.usages)
-            .unfilter(&raw_ty.usages)
         };
+        let Some(eq_ty) = as_equal(eq_ty_0, eq_ty_1) else {
+            panic!(
+                "equal_eq_eq_term_1_injective(): types of equal terms are not equal.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let eq_ty = eq_ty.unfilter(&raw_ty.usages);
+
         let eq_term_0_0 = {
             eq_term_0_0
             .unfilter(&ty_0.usages)
@@ -1335,35 +1316,121 @@ impl<S: Scheme> Tm<S> {
             .unfilter(&raw_ty.usages)
         };
 
-        let ty = RawTy::heterogeneous_equal(
-            eq_ty_0.clone(),
-            eq_ty_1.clone(),
-            RawTm::equal_eq_eq_ty_injective(
-                eq_ty_0.clone(), eq_ty_1.clone(),
-                eq_term_0_0.clone(), eq_term_0_1.clone(),
-                eq_term_1_0.clone(), eq_term_1_1.clone(),
-                raw_term.clone(),
-            ),
+        let ty = RawTy::equal(
+            eq_ty.clone(),
             eq_term_1_0.clone(),
             eq_term_1_1.clone(),
         );
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
             None => RawTm::equal_eq_eq_term_1_injective(
-                eq_ty_0, eq_ty_1,
+                eq_ty,
                 eq_term_0_0, eq_term_0_1,
                 eq_term_1_0, eq_term_1_1,
                 raw_term,
             ),
         };
         let term = RawTyped::from_parts(ty, term);
-        let ret = Tm {
+        Tm {
             raw_ctx: raw_ctx.clone(),
             raw_typed_term: term,
+        }
+    }
+
+    pub fn sum_eq_name_injective(&self) -> Tm<S> {
+        let Tm { raw_ctx, raw_typed_term } = self;
+        let ctx_len = raw_typed_term.usages.len();
+        let (raw_ty, raw_term) = raw_typed_term.to_parts();
+        let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
+            panic!(
+                "sum_eq_name_injective(): self is not an equality.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
         };
-        // TODO: remove
-        ret.sanity_check();
-        ret
+        let RawTyKind::Universe = eq_ty.weak.get_clone() else {
+            panic!(
+                "sum_eq_name_injective(): self is not an equality between types.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTyKind::Sum { lhs_name: lhs_name_0, lhs_ty: lhs_ty_0, rhs_ty: rhs_ty_0 } = ty_0.weak.get_clone() else {
+            panic!(
+                "sum_eq_name_injective(): type on left side of equality\
+                is not a sum.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+        let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTyKind::Sum { lhs_name: lhs_name_1, lhs_ty: lhs_ty_1, rhs_ty: rhs_ty_1 } = ty_1.weak.get_clone() else {
+            panic!(
+                "sum_eq_name_injective(): type on right side of equality\
+                is not a sum.\n\
+                self.ty(): {:?}",
+                self.ty(),
+            );
+        };
+
+        let lhs_name_0 = {
+            lhs_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let lhs_name_1 = {
+            lhs_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let lhs_ty_0 = {
+            lhs_ty_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let lhs_ty_1 = {
+            lhs_ty_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let rhs_ty_0 = {
+            rhs_ty_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let rhs_ty_1 = {
+            rhs_ty_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+
+        let ty = RawTy::equal(
+            RawTy::name(ctx_len),
+            RawTm::from_name(lhs_name_0.clone()),
+            RawTm::from_name(lhs_name_1.clone()),
+        );
+        let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
+            Some(eta_term) => eta_term,
+            None => RawTm::sum_eq_name_injective(
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, raw_term,
+            ),
+        };
+        let term = RawTyped::from_parts(ty, term);
+        Tm {
+            raw_ctx: raw_ctx.clone(),
+            raw_typed_term: term,
+        }
     }
 
     pub fn sum_eq_lhs_injective(&self) -> Tm<S> {
@@ -1387,7 +1454,7 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Sum { lhs_ty: lhs_ty_0, rhs_ty: rhs_ty_0 } = ty_0.weak.get_clone() else {
+        let RawTyKind::Sum { lhs_name: lhs_name_0, lhs_ty: lhs_ty_0, rhs_ty: rhs_ty_0 } = ty_0.weak.get_clone() else {
             panic!(
                 "sum_eq_lhs_injective(): type on left side of equality\
                 is not a sum.\n\
@@ -1398,7 +1465,7 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Sum { lhs_ty: lhs_ty_1, rhs_ty: rhs_ty_1 } = ty_1.weak.get_clone() else {
+        let RawTyKind::Sum { lhs_name: lhs_name_1, lhs_ty: lhs_ty_1, rhs_ty: rhs_ty_1 } = ty_1.weak.get_clone() else {
             panic!(
                 "sum_eq_lhs_injective(): type on right side of equality\
                 is not a sum.\n\
@@ -1407,6 +1474,18 @@ impl<S: Scheme> Tm<S> {
             );
         };
 
+        let lhs_name_0 = {
+            lhs_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let lhs_name_1 = {
+            lhs_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
         let lhs_ty_0 = {
             lhs_ty_0
             .unfilter(&ty_0.usages)
@@ -1439,7 +1518,9 @@ impl<S: Scheme> Tm<S> {
         );
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::sum_eq_lhs_injective(lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, raw_term),
+            None => RawTm::sum_eq_lhs_injective(
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, raw_term,
+            ),
         };
         let term = RawTyped::from_parts(ty, term);
         Tm {
@@ -1469,7 +1550,9 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Sum { lhs_ty: lhs_ty_0, rhs_ty: rhs_ty_0 } = ty_0.weak.get_clone() else {
+        let RawTyKind::Sum {
+            lhs_name: lhs_name_0, lhs_ty: lhs_ty_0, rhs_ty: rhs_ty_0,
+        } = ty_0.weak.get_clone() else {
             panic!(
                 "sum_eq_rhs_injective(): type on left side of equality\
                 is not a sum.\n\
@@ -1480,7 +1563,9 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Sum { lhs_ty: lhs_ty_1, rhs_ty: rhs_ty_1 } = ty_1.weak.get_clone() else {
+        let RawTyKind::Sum {
+            lhs_name: lhs_name_1, lhs_ty: lhs_ty_1, rhs_ty: rhs_ty_1,
+        } = ty_1.weak.get_clone() else {
             panic!(
                 "sum_eq_rhs_injective(): type on right side of equality\
                 is not a sum.\n\
@@ -1489,6 +1574,18 @@ impl<S: Scheme> Tm<S> {
             );
         };
 
+        let lhs_name_0 = {
+            lhs_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let lhs_name_1 = {
+            lhs_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
         let lhs_ty_0 = {
             lhs_ty_0
             .unfilter(&ty_0.usages)
@@ -1521,7 +1618,79 @@ impl<S: Scheme> Tm<S> {
         );
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::sum_eq_rhs_injective(lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, raw_term),
+            None => RawTm::sum_eq_rhs_injective(
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, raw_term,
+            ),
+        };
+        let term = RawTyped::from_parts(ty, term);
+        Tm {
+            raw_ctx: raw_ctx.clone(),
+            raw_typed_term: term,
+        }
+    }
+
+    pub fn sigma_eq_name_injective(&self) -> Tm<S> {
+        let Tm { raw_ctx, raw_typed_term } = self;
+        let ctx_len = raw_typed_term.usages.len();
+        let (raw_ty, raw_term) = raw_typed_term.to_parts();
+        let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTyKind::Universe = eq_ty.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTyKind::Sigma {
+            head_name: head_name_0, tail_ty: tail_ty_0,
+        } = ty_0.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTyKind::Sigma {
+            head_name: head_name_1, tail_ty: tail_ty_1,
+        } = ty_1.weak.get_clone() else {
+            unreachable!();
+        };
+
+        let head_name_0 = {
+            head_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let head_name_1 = {
+            head_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let tail_ty_0 = {
+            tail_ty_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let tail_ty_1 = {
+            tail_ty_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+
+        let ty = RawTy::equal(
+            RawTy::name(ctx_len),
+            RawTm::from_name(head_name_0.clone()),
+            RawTm::from_name(head_name_1.clone()),
+        );
+        let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
+            Some(eta_term) => eta_term,
+            None => RawTm::sigma_eq_name_injective(
+                head_name_0, head_name_1, tail_ty_0, tail_ty_1, raw_term,
+            ),
         };
         let term = RawTyped::from_parts(ty, term);
         Tm {
@@ -1543,18 +1712,44 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Sigma { tail_ty: tail_ty_0 } = ty_0.weak.get_clone() else {
+        let RawTyKind::Sigma {
+            head_name: head_name_0, tail_ty: tail_ty_0,
+        } = ty_0.weak.get_clone() else {
             unreachable!();
         };
         let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Sigma { tail_ty: tail_ty_1 } = ty_1.weak.get_clone() else {
+        let RawTyKind::Sigma {
+            head_name: head_name_1, tail_ty: tail_ty_1,
+        } = ty_1.weak.get_clone() else {
             unreachable!();
         };
 
-        let tail_ty_0 = tail_ty_0.unfilter(&ty_0.usages).unfilter(&eq_term_0.usages).unfilter(&raw_ty.usages);
-        let tail_ty_1 = tail_ty_1.unfilter(&ty_1.usages).unfilter(&eq_term_1.usages).unfilter(&raw_ty.usages);
+        let head_name_0 = {
+            head_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let head_name_1 = {
+            head_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let tail_ty_0 = {
+            tail_ty_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let tail_ty_1 = {
+            tail_ty_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
 
         let ty = RawTy::equal(
             RawTy::universe(ctx_len),
@@ -1563,7 +1758,9 @@ impl<S: Scheme> Tm<S> {
         );
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::sigma_eq_head_injective(tail_ty_0, tail_ty_1, raw_term),
+            None => RawTm::sigma_eq_head_injective(
+                head_name_0, head_name_1, tail_ty_0, tail_ty_1, raw_term,
+            ),
         };
         let term = RawTyped::from_parts(ty, term);
         Tm {
@@ -1572,7 +1769,9 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
-    pub fn sigma_eq_tail_injective(&self) -> Tm<S> {
+    pub fn sigma_eq_tail_injective(
+        &self,
+    ) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
         let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
@@ -1584,27 +1783,178 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Sigma { tail_ty: tail_ty_0 } = ty_0.weak.get_clone() else {
+        let RawTyKind::Sigma {
+            head_name: head_name_0, tail_ty: tail_ty_0,
+        } = ty_0.weak.get_clone() else {
             unreachable!();
         };
         let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Sigma { tail_ty: tail_ty_1 } = ty_1.weak.get_clone() else {
+        let RawTyKind::Sigma {
+            head_name: head_name_1, tail_ty: tail_ty_1,
+        } = ty_1.weak.get_clone() else {
             unreachable!();
         };
 
-        let tail_ty_0 = tail_ty_0.unfilter(&ty_0.usages).unfilter(&eq_term_0.usages).unfilter(&raw_ty.usages);
-        let tail_ty_1 = tail_ty_1.unfilter(&ty_1.usages).unfilter(&eq_term_1.usages).unfilter(&raw_ty.usages);
+        let head_name_0 = {
+            head_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+        };
+        let head_name_1 = {
+            head_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+        };
+        let Some(head_name) = as_equal(head_name_0, head_name_1) else {
+            unreachable!();
+        };
+        let head_name = head_name.unfilter(&raw_ty.usages);
 
-        let ty = RawTy::scoped_tys_congruence_ty(
-            tail_ty_0.clone(),
-            tail_ty_1.clone(),
-            RawTm::sigma_eq_head_injective(tail_ty_0.clone(), tail_ty_1.clone(), raw_term.clone()),
+        let tail_ty_0 = {
+            tail_ty_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let tail_ty_1 = {
+            tail_ty_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let (inner_tail_ty_0, head_ty_0) = tail_ty_0.clone().into_inner();
+        let (inner_tail_ty_1, head_ty_1) = tail_ty_1.clone().into_inner();
+        let Some(head_ty) = as_equal(head_ty_0, head_ty_1) else {
+            panic!();
+        };
+
+        let ty = RawTy::equal(
+            RawTy::pi(
+                head_name.clone(),
+                RawScope::new(head_ty.clone(), RawTy::universe(raw_ctx.len() + 1)),
+            ),
+            RawTm::func(
+                head_name.clone(),
+                RawScope::new(head_ty.clone(), RawTm::from_ty(inner_tail_ty_0)),
+            ),
+            RawTm::func(
+                head_name.clone(),
+                RawScope::new(head_ty, RawTm::from_ty(inner_tail_ty_1)),
+            ),
         );
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::sigma_eq_tail_injective(tail_ty_0, tail_ty_1, raw_term),
+            None => RawTm::sigma_eq_tail_injective(
+                head_name,
+                tail_ty_0,
+                tail_ty_1,
+                raw_term,
+            ),
+        };
+        let term = RawTyped::from_parts(ty, term);
+        Tm {
+            raw_ctx: raw_ctx.clone(),
+            raw_typed_term: term,
+        }
+    }
+
+    pub fn pi_eq_name_injective(&self) -> Tm<S> {
+        let Tm { raw_ctx, raw_typed_term } = self;
+        let ctx_len = raw_typed_term.usages.len();
+        let (raw_ty, raw_term) = raw_typed_term.to_parts();
+        let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
+            panic!("\
+                pi_eq_name_injective(): self is not an equality.\n\
+                self.ty(): {:#?}",
+                self.ty(),
+            );
+        };
+        let RawTyKind::Universe = eq_ty.weak.get_clone() else {
+            let eq_ty = eq_ty.clone_unfilter(&raw_ty.usages);
+            let eq_ty = Ty {
+                raw_ctx: raw_ctx.clone(),
+                raw_ty: eq_ty,
+            };
+            panic!("\
+                pi_eq_name_injective(): self is not an equality between types.\n\
+                equality_type: {:#?}",
+                eq_ty,
+            );
+        };
+        let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTyKind::Pi {
+            arg_name: arg_name_0, res_ty: res_ty_0,
+        } = ty_0.weak.get_clone() else {
+            let ty_0 = ty_0.clone_unfilter(&eq_term_0.usages);
+            let ty_0 = ty_0.unfilter(&raw_ty.usages);
+            let ty_0 = Ty {
+                raw_ctx: raw_ctx.clone(),
+                raw_ty: ty_0,
+            };
+            panic!(
+                "pi_eq_name_injective(): type on left side of equality is not a pi type.\n\
+                left type: {:#?}",
+                ty_0,
+            );
+        };
+        let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
+            unreachable!();
+        };
+        let RawTyKind::Pi {
+            arg_name: arg_name_1, res_ty: res_ty_1,
+        } = ty_1.weak.get_clone() else {
+            let ty_1 = ty_1.clone_unfilter(&eq_term_1.usages);
+            let ty_1 = ty_1.unfilter(&raw_ty.usages);
+            let ty_1 = Ty {
+                raw_ctx: raw_ctx.clone(),
+                raw_ty: ty_1,
+            };
+            panic!(
+                "pi_eq_name_injective(): type on right side of equality is not a pi type.\n\
+                right type: {:#?}",
+                ty_1,
+            );
+        };
+
+        let arg_name_0 = {
+            arg_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let arg_name_1 = {
+            arg_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let res_ty_0 = {
+            res_ty_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let res_ty_1 = {
+            res_ty_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
+
+        let ty = RawTy::equal(
+            RawTy::name(ctx_len),
+            RawTm::from_name(arg_name_0.clone()),
+            RawTm::from_name(arg_name_1.clone()),
+        );
+        let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
+            Some(eta_term) => eta_term,
+            None => RawTm::pi_eq_name_injective(
+                arg_name_0, arg_name_1, res_ty_0, res_ty_1, raw_term,
+            ),
         };
         let term = RawTyped::from_parts(ty, term);
         Tm {
@@ -1639,7 +1989,9 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Pi { res_ty: res_ty_0 } = ty_0.weak.get_clone() else {
+        let RawTyKind::Pi {
+            arg_name: arg_name_0, res_ty: res_ty_0,
+        } = ty_0.weak.get_clone() else {
             let ty_0 = ty_0.clone_unfilter(&eq_term_0.usages);
             let ty_0 = ty_0.unfilter(&raw_ty.usages);
             let ty_0 = Ty {
@@ -1655,7 +2007,9 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Pi { res_ty: res_ty_1 } = ty_1.weak.get_clone() else {
+        let RawTyKind::Pi {
+            arg_name: arg_name_1, res_ty: res_ty_1,
+        } = ty_1.weak.get_clone() else {
             let ty_1 = ty_1.clone_unfilter(&eq_term_1.usages);
             let ty_1 = ty_1.unfilter(&raw_ty.usages);
             let ty_1 = Ty {
@@ -1669,6 +2023,18 @@ impl<S: Scheme> Tm<S> {
             );
         };
 
+        let arg_name_0 = {
+            arg_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+            .unfilter(&raw_ty.usages)
+        };
+        let arg_name_1 = {
+            arg_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+            .unfilter(&raw_ty.usages)
+        };
         let res_ty_0 = {
             res_ty_0
             .unfilter(&ty_0.usages)
@@ -1689,7 +2055,9 @@ impl<S: Scheme> Tm<S> {
         );
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::pi_eq_arg_injective(res_ty_0, res_ty_1, raw_term),
+            None => RawTm::pi_eq_arg_injective(
+                arg_name_0, arg_name_1, res_ty_0, res_ty_1, raw_term,
+            ),
         };
         let term = RawTyped::from_parts(ty, term);
         Tm {
@@ -1723,7 +2091,9 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_0 } = eq_term_0.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Pi { res_ty: res_ty_0 } = ty_0.weak.get_clone() else {
+        let RawTyKind::Pi {
+            arg_name: arg_name_0, res_ty: res_ty_0,
+        } = ty_0.weak.get_clone() else {
             let ty_0 = ty_0.clone_unfilter(&eq_term_0.usages);
             let ty_0 = ty_0.unfilter(&raw_ty.usages);
             let ty_0 = Ty {
@@ -1739,7 +2109,9 @@ impl<S: Scheme> Tm<S> {
         let RawTmKind::Type { ty: ty_1 } = eq_term_1.weak.get_clone() else {
             unreachable!();
         };
-        let RawTyKind::Pi { res_ty: res_ty_1 } = ty_1.weak.get_clone() else {
+        let RawTyKind::Pi {
+            arg_name: arg_name_1, res_ty: res_ty_1,
+        } = ty_1.weak.get_clone() else {
             let ty_1 = ty_1.clone_unfilter(&eq_term_1.usages);
             let ty_1 = ty_1.unfilter(&raw_ty.usages);
             let ty_1 = Ty {
@@ -1753,6 +2125,21 @@ impl<S: Scheme> Tm<S> {
             );
         };
 
+        let arg_name_0 = {
+            arg_name_0
+            .unfilter(&ty_0.usages)
+            .unfilter(&eq_term_0.usages)
+        };
+        let arg_name_1 = {
+            arg_name_1
+            .unfilter(&ty_1.usages)
+            .unfilter(&eq_term_1.usages)
+        };
+        let Some(arg_name) = as_equal(arg_name_0, arg_name_1) else {
+            panic!();
+        };
+        let arg_name = arg_name.unfilter(&raw_ty.usages);
+
         let res_ty_0 = {
             res_ty_0
             .unfilter(&ty_0.usages)
@@ -1765,15 +2152,34 @@ impl<S: Scheme> Tm<S> {
             .unfilter(&eq_term_1.usages)
             .unfilter(&raw_ty.usages)
         };
+        let (inner_res_ty_0, arg_ty_0) = res_ty_0.clone().into_inner();
+        let (inner_res_ty_1, arg_ty_1) = res_ty_1.clone().into_inner();
+        let Some(arg_ty) = as_equal(arg_ty_0, arg_ty_1) else {
+            panic!();
+        };
 
-        let ty = RawTy::scoped_tys_congruence_ty(
-            res_ty_0.clone(),
-            res_ty_1.clone(),
-            RawTm::pi_eq_arg_injective(res_ty_0.clone(), res_ty_1.clone(), raw_term.clone()),
+        let ty = RawTy::equal(
+            RawTy::pi(
+                arg_name.clone(),
+                RawScope::new(arg_ty.clone(), RawTy::universe(raw_ctx.len() + 1)),
+            ),
+            RawTm::func(
+                arg_name.clone(),
+                RawScope::new(arg_ty.clone(), RawTm::from_ty(inner_res_ty_0)),
+            ),
+            RawTm::func(
+                arg_name.clone(),
+                RawScope::new(arg_ty, RawTm::from_ty(inner_res_ty_1)),
+            ),
         );
         let term = match ty.unique_eta_term_opt(&mut Vec::new()) {
             Some(eta_term) => eta_term,
-            None => RawTm::pi_eq_res_injective(res_ty_0, res_ty_1, raw_term),
+            None => RawTm::pi_eq_res_injective(
+                arg_name,
+                res_ty_0,
+                res_ty_1,
+                raw_term,
+            ),
         };
         let term = RawTyped::from_parts(ty, term);
 
@@ -1781,32 +2187,6 @@ impl<S: Scheme> Tm<S> {
             raw_ctx: raw_ctx.clone(),
             raw_typed_term: term,
         }
-    }
-
-    pub fn scoped_tys_congruence_ty(
-        &self,
-        scoped_ty_0: impl FnOnce(Tm<S>) -> Ty<S>,
-        scoped_ty_1: impl FnOnce(Tm<S>) -> Ty<S>,
-    ) -> Ty<S> {
-        let Tm { raw_ctx, raw_typed_term } = self;
-        let (raw_ty, raw_term) = raw_typed_term.to_parts();
-        let RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } = raw_ty.weak.get_clone() else {
-            panic!("scoped_tys_congruence_ty(): self is not an equality");
-        };
-        let RawTyKind::Universe = eq_ty.weak.get_clone() else {
-            panic!("scoped_tys_congruence_ty(): self is not an equality between types");
-        };
-        let eq_term_0 = eq_term_0.clone_unfilter(&raw_ty.usages);
-        let eq_term_1 = eq_term_1.clone_unfilter(&raw_ty.usages);
-        let var_ty_0 = RawTy::from_term(eq_term_0);
-        let var_ty_1 = RawTy::from_term(eq_term_1);
-
-        let scoped_ty_0 = raw_scope(raw_ctx, &var_ty_0, scoped_ty_0);
-        let scoped_ty_1 = raw_scope(raw_ctx, &var_ty_1, scoped_ty_1);
-        
-        let raw_ty = RawTy::scoped_tys_congruence_ty(scoped_ty_0, scoped_ty_1, raw_term);
-        let raw_ctx = raw_ctx.clone();
-        Ty { raw_ctx, raw_ty }
     }
 
     pub fn as_var(&self) -> Option<usize> {
@@ -1818,36 +2198,6 @@ impl<S: Scheme> Tm<S> {
                 .as_var()
             },
             _ => None,
-        }
-    }
-
-    pub fn tagged(&self, tag: S::Tag) -> Tm<S> {
-        let Tm { raw_ctx, raw_typed_term } = self;
-        let (raw_ty, raw_term) = raw_typed_term.to_parts();
-        let raw_ty = RawTy::tagged(tag.clone(), raw_ty);
-        let raw_term = RawTm::tagged(tag, raw_term);
-        let raw_typed_term = RawTyped::from_parts(raw_ty, raw_term);
-
-        Tm { raw_ctx: raw_ctx.clone(), raw_typed_term }
-    }
-
-    pub fn strip_tag(&self) -> Tm<S> {
-        let Tm { raw_ctx, raw_typed_term } = self;
-        let (raw_ty, raw_term) = raw_typed_term.to_parts();
-        let RawTyKind::Tagged { tag, inner_ty } = raw_ty.weak.get_clone() else {
-            panic!(
-                "strip_tag(): self is not a tagged term.\n\
-                self.ty(): {:?}",
-                self.ty(),
-            );
-        };
-        
-        let inner_ty = Weaken { usages: raw_ty.usages, weak: inner_ty };
-        let term = RawTm::strip_tag(tag, inner_ty.clone(), raw_term);
-        let term = RawTyped::from_parts(inner_ty, term);
-        Tm {
-            raw_ctx: raw_ctx.clone(),
-            raw_typed_term: term,
         }
     }
 }

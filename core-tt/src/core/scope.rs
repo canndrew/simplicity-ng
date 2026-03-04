@@ -1,15 +1,20 @@
 use crate::priv_prelude::*;
 
 #[derive_where(Clone; T::Raw: Clone)]
-#[derive_where(PartialEq; T::Raw: PartialEq)]
-#[derive_where(Eq; T::Raw: Eq)]
-#[derive_where(Hash; T::Raw: hash::Hash)]
-#[derive_where(PartialOrd; T::Raw: PartialOrd)]
-#[derive_where(Ord; T::Raw: Ord)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Scope<S: Scheme, T: Contextual<S>> {
     pub(crate) raw_ctx: RawCtx<S>,
     pub(crate) raw_scope: RawScope<S, T::Raw>,
+}
+
+impl<S: Scheme, T: Contextual<S>> PartialEq for Scope<S, T>
+where
+    T::Raw: PartialEq,
+{
+    fn eq(&self, other: &Scope<S, T>) -> bool {
+        let (_, (scope_0, scope_1)) = merge_ctxs((self, other));
+        scope_0 == scope_1
+    }
 }
 
 impl<S: Scheme, T: Contextual<S>> Contextual<S> for Scope<S, T>
@@ -38,6 +43,10 @@ where
 
     fn eliminates_var(&self, index: usize) -> bool {
         self.raw_scope.eliminates_var(index)
+    }
+
+    fn contains_subterm(&self, subterm: &RawTm<S>) -> bool {
+        self.raw_scope.contains_subterm(subterm)
     }
 }
 
@@ -72,7 +81,7 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
     }
 
     pub fn bind(&self, term: &Tm<S>) -> T {
-        let (ctx, raw_scope, raw_typed_term) = Ctx::merge_into_ctx_2(self, term);
+        let (ctx, (raw_scope, raw_typed_term)) = merge_ctxs((self, term));
         let (raw_ty, raw_term) = raw_typed_term.into_parts();
 
         let expected_raw_ty = raw_scope.var_ty_unfiltered();
@@ -132,11 +141,11 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
         let ctx = Ctx { raw_ctx };
         let inner = T::from_raw(ctx.clone(), inner);
         let inner = func(var_term, inner);
-        let (new_ctx, mut inner) = inner.into_raw();
+        let (new_ctx, inner) = inner.into_raw();
 
         let diff = (ctx_len + 1).strict_sub(new_ctx.len());
         assert_eq!(ctx.raw_ctx.nth_parent(diff), &new_ctx.raw_ctx);
-        inner.weaken(diff);
+        let inner = inner.weaken(diff);
 
         let raw_scope = RawScope::new(raw_ty, inner);
         Scope {
@@ -174,11 +183,11 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
             },
             ControlFlow::Continue(inner) => {
                 let scope = {
-                    let (new_ctx, mut inner) = inner.into_raw();
+                    let (new_ctx, inner) = inner.into_raw();
 
                     let diff = (ctx_len + 1).strict_sub(new_ctx.len());
                     assert_eq!(ctx.raw_ctx.nth_parent(diff), &new_ctx.raw_ctx);
-                    inner.weaken(diff);
+                    let inner = inner.weaken(diff);
 
                     let raw_scope = RawScope::new(raw_ty, inner);
                     Scope {
@@ -233,28 +242,25 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
 }
 
 impl<S: Scheme> Scope<S, Ty<S>> {
-    pub fn to_sigma(&self) -> Ty<S> {
-        let Scope { raw_ctx, raw_scope } = self;
-        let raw_ctx = raw_ctx.clone();
-        let raw_ty = RawTy::sigma(raw_scope.clone());
+    pub fn to_sigma(&self, head_name: &Name<S>) -> Ty<S> {
+        let (Ctx { raw_ctx }, (scope, head_name)) = merge_ctxs((self, head_name));
+        let raw_ty = RawTy::sigma(head_name, scope);
         Ty { raw_ctx, raw_ty }
     }
 
-    pub fn to_pi(&self) -> Ty<S> {
-        let Scope { raw_ctx, raw_scope } = self;
-        let raw_ctx = raw_ctx.clone();
-        let raw_ty = RawTy::pi(raw_scope.clone());
+    pub fn to_pi(&self, arg_name: &Name<S>) -> Ty<S> {
+        let (Ctx { raw_ctx }, (raw_scope, arg_name)) = merge_ctxs((self, arg_name));
+        let raw_ty = RawTy::pi(arg_name, raw_scope);
         Ty { raw_ctx, raw_ty }
     }
 }
 
 impl<S: Scheme> Scope<S, Tm<S>> {
-    pub fn to_func(&self) -> Tm<S> {
-        let Scope { raw_ctx, raw_scope } = self;
-        let raw_ctx = raw_ctx.clone();
-        let (res_ty, res_term) = raw_scope.clone().into_parts();
-        let res_ty = RawTy::pi(res_ty);
-        let res_term = RawTm::func(res_term);
+    pub fn to_func(&self, arg_name: &Name<S>) -> Tm<S> {
+        let (Ctx { raw_ctx }, (raw_scope, arg_name)) = merge_ctxs((self, arg_name));
+        let (res_ty, res_term) = raw_scope.into_parts();
+        let res_ty = RawTy::pi(arg_name.clone(), res_ty);
+        let res_term = RawTm::func(arg_name, res_term);
         let raw_typed_term = RawTyped::from_parts(res_ty, res_term);
 
         Tm { raw_ctx, raw_typed_term }

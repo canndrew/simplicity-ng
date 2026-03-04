@@ -137,27 +137,45 @@ impl<S: Scheme> Stuck<S> {
                 )
             },
 
-            StuckKind::ProjHead { .. } => None,
-            StuckKind::ProjTail { .. } => None,
+            StuckKind::ProjHead { .. } |
+            StuckKind::ProjTail { .. } |
             StuckKind::App { .. } => None,
 
             StuckKind::Max { .. } |
             StuckKind::Add { .. } |
             StuckKind::Mul { .. } |
             StuckKind::PowConstant { .. } |
+            StuckKind::TagsApart { .. } |
             StuckKind::EqualEqEqTyInjective { .. } |
             StuckKind::EqualEqEqTerm0Injective { .. } |
             StuckKind::EqualEqEqTerm1Injective { .. } |
+            StuckKind::SumEqNameInjective { .. } |
             StuckKind::SumEqLhsInjective { .. } |
             StuckKind::SumEqRhsInjective { .. } |
+            StuckKind::SigmaEqNameInjective { .. } |
             StuckKind::SigmaEqHeadInjective { .. } |
             StuckKind::SigmaEqTailInjective { .. } |
+            StuckKind::PiEqNameInjective { .. } |
             StuckKind::PiEqArgInjective { .. } |
             StuckKind::PiEqResInjective { .. } => unreachable!(),
         }
     }
 
+    fn try_find_alternate_term(&self) -> Option<(Tm<S>, Scope<S, Tm<S>>)> {
+        match self.kind() {
+            StuckKind::Var { .. } => {
+                // TODO
+            },
+
+            // TODO
+            _ => (),
+        }
+        None
+    }
+
     fn try_prove_uninhabited(&self) -> Option<Uninhabited<S>> {
+        let inhabitant_name = S::name_from_str("inhabitant");
+
         assert!(matches!(self.ty().kind(), TyKind::Universe));
 
         match self.kind() {
@@ -207,19 +225,23 @@ impl<S: Scheme> Stuck<S> {
                                     |rhs_term| rhs_inhab.bind(&rhs_term),
                                 )
                                 .to_ty()
-                                .pi(|term| term.ctx().never())
+                                .pi(&inhabitant_name, |term| term.ctx().never())
                             },
                             |lhs_term| {
                                 lhs_inhab
                                 .bind(&lhs_term)
                                 .to_ty()
-                                .func(|term| lhs_inhab_uninhabited.bind(&lhs_term).contradiction(&term))
+                                .func(&inhabitant_name, |term| {
+                                    lhs_inhab_uninhabited.bind(&lhs_term).contradiction(&term)
+                                })
                             },
                             |rhs_term| {
                                 rhs_inhab
                                 .bind(&rhs_term)
                                 .to_ty()
-                                .func(|term| rhs_inhab_uninhabited.bind(&rhs_term).contradiction(&term))
+                                .func(&inhabitant_name, |term| {
+                                    rhs_inhab_uninhabited.bind(&rhs_term).contradiction(&term)
+                                })
                             },
                         )
                         .app(&term)
@@ -235,13 +257,17 @@ impl<S: Scheme> Stuck<S> {
             StuckKind::Add { .. } |
             StuckKind::Mul { .. } |
             StuckKind::PowConstant { .. } |
+            StuckKind::TagsApart { .. } |
             StuckKind::EqualEqEqTyInjective { .. } |
             StuckKind::EqualEqEqTerm0Injective { .. } |
             StuckKind::EqualEqEqTerm1Injective { .. } |
+            StuckKind::SumEqNameInjective { .. } |
             StuckKind::SumEqLhsInjective { .. } |
             StuckKind::SumEqRhsInjective { .. } |
+            StuckKind::SigmaEqNameInjective { .. } |
             StuckKind::SigmaEqHeadInjective { .. } |
             StuckKind::SigmaEqTailInjective { .. } |
+            StuckKind::PiEqNameInjective { .. } |
             StuckKind::PiEqArgInjective { .. } |
             StuckKind::PiEqResInjective { .. } => unreachable!(),
         }
@@ -292,19 +318,27 @@ impl<S: Scheme> Stuck<S> {
             StuckKind::Add { .. } |
             StuckKind::Mul { .. } |
             StuckKind::PowConstant { .. } |
+            StuckKind::TagsApart { .. } |
             StuckKind::EqualEqEqTyInjective { .. } |
             StuckKind::EqualEqEqTerm0Injective { .. } |
             StuckKind::EqualEqEqTerm1Injective { .. } |
+            StuckKind::SumEqNameInjective { .. } |
             StuckKind::SumEqLhsInjective { .. } |
             StuckKind::SumEqRhsInjective { .. } |
+            StuckKind::SigmaEqNameInjective { .. } |
             StuckKind::SigmaEqHeadInjective { .. } |
             StuckKind::SigmaEqTailInjective { .. } |
+            StuckKind::PiEqNameInjective { .. } |
             StuckKind::PiEqArgInjective { .. } |
             StuckKind::PiEqResInjective { .. } => unreachable!(),
         }
     }
 
-    fn constrains_var(&self, index: usize) -> Option<(Tm<S>, Scope<S, Tm<S>>)> {
+    fn constrains_var(
+        &self,
+        index: usize,
+        var_name: &Name<S>,
+    ) -> Option<(Tm<S>, Scope<S, Tm<S>>)> {
         assert!(matches!(self.ty().kind(), TyKind::Universe));
 
         match self.kind() {
@@ -333,10 +367,12 @@ impl<S: Scheme> Stuck<S> {
 
             StuckKind::Case { elim, motive: _, lhs_inhab, rhs_inhab } => {
                 let (lhs_var_term, lhs_proof) = {
-                    lhs_inhab.map_out(|_, lhs_inhab| lhs_inhab.to_ty().constrains_var(index))?
+                    lhs_inhab
+                    .map_out(|_, lhs_inhab| lhs_inhab.to_ty().constrains_var(index, var_name))?
                 };
                 let (rhs_var_term, rhs_proof) = {
-                    rhs_inhab.map_out(|_, rhs_inhab| rhs_inhab.to_ty().constrains_var(index))?
+                    rhs_inhab
+                    .map_out(|_, rhs_inhab| rhs_inhab.to_ty().constrains_var(index, var_name))?
                 };
                 let var_term = as_equal(lhs_var_term, rhs_var_term)?;
                 let lhs_proof = Scope::new(lhs_proof);
@@ -358,7 +394,7 @@ impl<S: Scheme> Stuck<S> {
                                     |rhs_term| rhs_inhab.bind(&rhs_term),
                                 )
                                 .to_ty()
-                                .pi(|case_term| {
+                                .pi(var_name, |case_term| {
                                     case_term.ctx().var(index).equals(&var_term)
                                 })
                             },
@@ -366,13 +402,17 @@ impl<S: Scheme> Stuck<S> {
                                 lhs_inhab
                                 .bind(&lhs_term)
                                 .to_ty()
-                                .func(|case_term| lhs_proof.bind(&lhs_term).bind(&case_term))
+                                .func(var_name, |case_term| {
+                                    lhs_proof.bind(&lhs_term).bind(&case_term)
+                                })
                             },
                             |rhs_term| {
                                 rhs_inhab
                                 .bind(&rhs_term)
                                 .to_ty()
-                                .func(|case_term| rhs_proof.bind(&rhs_term).bind(&case_term))
+                                .func(var_name, |case_term| {
+                                    rhs_proof.bind(&rhs_term).bind(&case_term)
+                                })
                             },
                         )
                         .app(&case_term)
@@ -390,252 +430,21 @@ impl<S: Scheme> Stuck<S> {
             StuckKind::Add { .. } |
             StuckKind::Mul { .. } |
             StuckKind::PowConstant { .. } |
+            StuckKind::TagsApart { .. } |
             StuckKind::EqualEqEqTyInjective { .. } |
             StuckKind::EqualEqEqTerm0Injective { .. } |
             StuckKind::EqualEqEqTerm1Injective { .. } |
+            StuckKind::SumEqNameInjective { .. } |
             StuckKind::SumEqLhsInjective { .. } |
             StuckKind::SumEqRhsInjective { .. } |
+            StuckKind::SigmaEqNameInjective { .. } |
             StuckKind::SigmaEqHeadInjective { .. } |
             StuckKind::SigmaEqTailInjective { .. } |
+            StuckKind::PiEqNameInjective { .. } |
             StuckKind::PiEqArgInjective { .. } |
             StuckKind::PiEqResInjective { .. } => unreachable!(),
         }
         None
-    }
-
-    fn simplify(&self) -> Scope<S, Tm<S>> {
-        assert!(matches!(self.ty().kind(), TyKind::Universe));
-        let irreducible = || self.to_ty().scope(|term| term);
-
-        match self.kind() {
-            StuckKind::Var { .. } => irreducible(),
-
-            StuckKind::ForLoop { .. } => {
-                // TODO
-                irreducible()
-            },
-
-            StuckKind::Cong { elim, motive: _, inhab } => {
-                let inhab_scope = inhab.map(|_, inhab| inhab.to_ty().simplify());
-                let scope = {
-                    elim
-                    .to_term()
-                    .cong(
-                        |_, _, _| self.ctx().universe(),
-                        |eq_term| inhab_scope.bind(&eq_term).var_ty().to_term(),
-                    )
-                    .to_ty()
-                    .scope(|term| {
-                        elim
-                        .to_term()
-                        .weaken_into(&term.ctx())
-                        .cong(
-                            |_, _, elim| {
-                                elim
-                                .cong(
-                                    |_, _, elim| elim.ctx().universe(),
-                                    |eq_term| inhab_scope.bind(&eq_term).var_ty().to_term(),
-                                )
-                                .to_ty()
-                                .pi(|_| {
-                                    elim
-                                    .cong(
-                                        |_, _, _| elim.ctx().universe(),
-                                        |eq_term| inhab.bind(&eq_term),
-                                    )
-                                    .to_ty()
-                                })
-                            },
-                            |eq_term| inhab_scope.bind(&eq_term).to_func(),
-                        )
-                        .app(&term)
-                    })
-                };
-
-                if let Some(strong_ty) = inhab_scope.map(|_, inhab_scope| inhab_scope.var_ty()).try_strengthen() {
-                    return strong_ty.scope(|term| {
-                        scope.bind(
-                            &elim
-                            .to_term()
-                            .cong(
-                                |_, _, elim| {
-                                    elim
-                                    .cong(
-                                        |_, _, _| elim.ctx().universe(),
-                                        |_| strong_ty.to_term(),
-                                    )
-                                    .to_ty()
-                                },
-                                |_| term,
-                            )
-                        )
-                    });
-                }
-
-                scope
-            },
-
-            StuckKind::UniqueIdentity { elim, motive: _, inhab } => {
-                let inhab_scope = inhab.map(|_, inhab| inhab.to_ty().simplify());
-                let scope = {
-                    elim
-                    .to_term()
-                    .unique_identity(
-                        |_, _| self.ctx().universe(),
-                        |eq_term| inhab_scope.bind(&eq_term).var_ty().to_term(),
-                    )
-                    .to_ty()
-                    .scope(|term| {
-                        elim
-                        .to_term()
-                        .weaken_into(&term.ctx())
-                        .unique_identity(
-                            |_, elim| {
-                                elim
-                                .unique_identity(
-                                    |_, elim| elim.ctx().universe(),
-                                    |eq_term| inhab_scope.bind(&eq_term).var_ty().to_term(),
-                                )
-                                .to_ty()
-                                .pi(|_| {
-                                    elim
-                                    .unique_identity(
-                                        |_, _| elim.ctx().universe(),
-                                        |eq_term| inhab.bind(&eq_term),
-                                    )
-                                    .to_ty()
-                                })
-                            },
-                            |eq_term| inhab_scope.bind(&eq_term).to_func(),
-                        )
-                        .app(&term)
-                    })
-                };
-
-                if let Some(strong_ty) = inhab_scope.map(|_, inhab_scope| inhab_scope.var_ty()).try_strengthen() {
-                    return strong_ty.scope(|term| {
-                        scope.bind(
-                            &elim
-                            .to_term()
-                            .unique_identity(
-                                |_, elim| {
-                                    elim
-                                    .unique_identity(
-                                        |_, _| elim.ctx().universe(),
-                                        |_| strong_ty.to_term(),
-                                    )
-                                    .to_ty()
-                                },
-                                |_| term,
-                            )
-                        )
-                    });
-                }
-
-                scope
-            },
-
-            StuckKind::Explode { .. } => {
-                irreducible()
-            },
-
-            StuckKind::Case { elim, motive: _, lhs_inhab, rhs_inhab } => {
-                let lhs_inhab_scope = lhs_inhab.map(|_, lhs_inhab| lhs_inhab.to_ty().simplify());
-                let rhs_inhab_scope = rhs_inhab.map(|_, rhs_inhab| rhs_inhab.to_ty().simplify());
-             
-                let scope = {
-                    elim
-                    .to_term()
-                    .case(
-                        |elim| elim.ctx().universe(),
-                        |lhs_term| lhs_inhab_scope.bind(&lhs_term).var_ty().to_term(),
-                        |rhs_term| rhs_inhab_scope.bind(&rhs_term).var_ty().to_term(),
-                    )
-                    .to_ty()
-                    .scope(|term| {
-                        elim
-                        .to_term()
-                        .weaken_into(&term.ctx())
-                        .case(
-                            |elim| {
-                                elim
-                                .case(
-                                    |elim| elim.ctx().universe(),
-                                    |lhs_term| lhs_inhab_scope.bind(&lhs_term).var_ty().to_term(),
-                                    |rhs_term| rhs_inhab_scope.bind(&rhs_term).var_ty().to_term(),
-                                )
-                                .to_ty()
-                                .pi(|_| {
-                                    elim
-                                    .case(
-                                        |elim| elim.ctx().universe(),
-                                        |lhs_term| lhs_inhab.bind(&lhs_term),
-                                        |rhs_term| rhs_inhab.bind(&rhs_term),
-                                    )
-                                    .to_ty()
-                                })
-                            },
-                            |lhs_term| lhs_inhab_scope.bind(&lhs_term).to_func(),
-                            |rhs_term| rhs_inhab_scope.bind(&rhs_term).to_func(),
-                        )
-                        .app(&term)
-                    })
-                };
-
-                if let Some(lhs_strong_ty) = lhs_inhab_scope.map(|_, scope| scope.var_ty()).try_strengthen()
-                && let Some(rhs_strong_ty) = rhs_inhab_scope.map(|_, scope| scope.var_ty()).try_strengthen()
-                && let Some(strong_ty) = as_equal(lhs_strong_ty, rhs_strong_ty)
-                {
-                    return strong_ty.scope(|term| {
-                        scope.bind(
-                            &elim
-                            .to_term()
-                            .weaken_into(&term.ctx())
-                            .case(
-                                |elim| {
-                                    elim
-                                    .case(
-                                        |elim| elim.ctx().universe(),
-                                        |_| strong_ty.to_term(),
-                                        |_| strong_ty.to_term(),
-                                    )
-                                    .to_ty()
-                                },
-                                |_| term.clone(),
-                                |_| term.clone(),
-                            )
-                        )
-                    });
-                }
-
-                scope
-            },
-
-            StuckKind::ProjHead { .. } |
-            StuckKind::ProjTail { .. } |
-            StuckKind::App { .. } => irreducible(),
-
-            StuckKind::Max { .. } |
-            StuckKind::Add { .. } |
-            StuckKind::Mul { .. } |
-            StuckKind::PowConstant { .. } |
-            StuckKind::EqualEqEqTyInjective { .. } |
-            StuckKind::EqualEqEqTerm0Injective { .. } |
-            StuckKind::EqualEqEqTerm1Injective { .. } |
-            StuckKind::SumEqLhsInjective { .. } |
-            StuckKind::SumEqRhsInjective { .. } |
-            StuckKind::SigmaEqHeadInjective { .. } |
-            StuckKind::SigmaEqTailInjective { .. } |
-            StuckKind::PiEqArgInjective { .. } |
-            StuckKind::PiEqResInjective { .. } => unreachable!(),
-        }
-    }
-
-    fn simplify_iso(&self) -> Iso<S> {
-        assert!(matches!(self.ty().kind(), TyKind::Universe));
-
-        // TODO
-        self.to_ty().iso_refl()
     }
 }
 

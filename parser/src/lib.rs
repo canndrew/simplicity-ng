@@ -15,6 +15,6 @@ pub use self::{
     token::{Token, Tokens, TokensRef, Ident, GroupKind, PunctKind, TokenizeError},
     span::{Position, Span, Spanned},
     parser::ParseError,
-    parse::{parse, parse_prec_stmt},
+    parse::parse_prec_stmt,
 };
 

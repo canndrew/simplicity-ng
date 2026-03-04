@@ -45,22 +45,24 @@ impl<S: Scheme> Ctx<S> {
         Ctx { raw_ctx }
     }
 
-    /// Pushes a variable binding of type `ty` onto the context and calls `func`, passing it a term
-    /// that refers to this variable.
-    pub fn with_cons<T>(&self, ty: &Ty<S>, func: impl FnOnce(Tm<S>) -> T) -> T {
-        let ty_ctx_len = ty.raw_ty.usages.len();
-        let diff = self.len().strict_sub(ty_ctx_len);
-        assert_eq!(self.raw_ctx.nth_parent(diff), &ty.raw_ctx);
-        let raw_ty = ty.raw_ty.clone_weaken(diff);
-        let raw_typed_term = RawTyped::from_parts(
-            raw_ty.clone_weaken(1),
-            RawTm::var(self.len() + 1, self.len(), &raw_ty),
-        );
-        let var_term = Tm {
-            raw_ctx: self.raw_ctx.cons(raw_ty),
-            raw_typed_term,
-        };
-        func(var_term)
+    pub fn with_names<const NUM_NAMES: usize, T>(
+        &self,
+        func: impl FnOnce([Name<S>; NUM_NAMES]) -> T,
+    ) -> T {
+        let mut raw_ctx = self.raw_ctx.clone();
+        let ctx_len = raw_ctx.len();
+        let mut sub_ctx_len = ctx_len;
+        for _ in 0..NUM_NAMES {
+            raw_ctx = raw_ctx.cons(RawTy::name(sub_ctx_len));
+            sub_ctx_len += 1;
+        }
+        let names = std::array::from_fn(|index| {
+            Name {
+                raw_ctx: raw_ctx.clone(),
+                raw_name: RawName::stuck(RawStuck::var(sub_ctx_len, ctx_len + index)),
+            }
+        });
+        func(names)
     }
 
     fn get_raw_ty_weakened(&self, index: usize) -> RawTy<S> {
@@ -102,69 +104,41 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
-    fn merge_ctx_2<T0: Contextual<S>, T1: Contextual<S>>(
-        thing_0: &T0,
-        thing_1: &T1,
-    ) -> Ctx<S> {
-        let raw_ctx_0 = &thing_0.ctx().raw_ctx;
-        let raw_ctx_1 = &thing_1.ctx().raw_ctx;
-        let ctx_len_0 = raw_ctx_0.len();
-        let ctx_len_1 = raw_ctx_1.len();
-
-        let (raw_ctx, cmp_ctx_0, cmp_ctx_1) = match ctx_len_0.cmp(&ctx_len_1) {
-            cmp::Ordering::Less => {
-                let diff = ctx_len_1 - ctx_len_0;
-                (raw_ctx_1, raw_ctx_0, raw_ctx_1.nth_parent(diff))
-            },
-            cmp::Ordering::Equal => (raw_ctx_0, raw_ctx_0, raw_ctx_1),
-            cmp::Ordering::Greater => {
-                let diff = ctx_len_0 - ctx_len_1;
-                (raw_ctx_0, raw_ctx_0.nth_parent(diff), raw_ctx_1)
-            },
-        };
-        assert_eq!(cmp_ctx_0, cmp_ctx_1);
-        let raw_ctx = raw_ctx.clone();
-        Ctx { raw_ctx }
-    }
-
-    pub(crate) fn merge_into_ctx_2<T0: Contextual<S> + Clone, T1: Contextual<S> + Clone>(
-        thing_0: &T0,
-        thing_1: &T1,
-    ) -> (Ctx<S>, Weaken<T0::Raw>, Weaken<T1::Raw>) {
-        let ctx = Ctx::merge_ctx_2(thing_0, thing_1);
-
-        let (ctx_0, mut thing_0) = thing_0.clone().into_raw();
-        thing_0.weaken(ctx.len().strict_sub(ctx_0.len()));
-        let (ctx_1, mut thing_1) = thing_1.clone().into_raw();
-        thing_1.weaken(ctx.len().strict_sub(ctx_1.len()));
-
-        (ctx, thing_0, thing_1)
-    }
-
-    /// Takes two things that implement `Contextual` and returns them weakened into the
-    /// common context that includes variables from both their contexts. The context of one thing
-    /// (either of them) must be an extension of the context of the other.
+    /// Takes a bundle of things that implement `Contextual` and returns them weakened into the
+    /// common context that includes variables from all their contexts. The longest context of any
+    /// must be an extension of all the other contexts.
     ///
     /// # Panics
     ///
-    /// If the contexts have diverged, each containing variables that the other doesn't.
+    /// If the contexts have diverged, meaning that there are two contexts which each contain
+    /// variables that the other doesn't.
     ///
-    pub fn into_common_ctx<T0: Contextual<S> + Clone, T1: Contextual<S> + Clone>(
-        thing_0: &T0,
-        thing_1: &T1,
-    ) -> (T0, T1) {
-        let (ctx, thing_0, thing_1) = Ctx::merge_into_ctx_2(thing_0, thing_1);
-        let thing_0 = T0::from_raw(ctx.clone(), thing_0);
-        let thing_1 = T1::from_raw(ctx, thing_1);
-        (thing_0, thing_1)
+    pub fn into_common_ctx<Ts: BundleOfContextual<S>>(bundle_of_contextual: Ts) -> Ts::Output {
+        BundleOfContextual::into_common_ctx(bundle_of_contextual)
     }
 
+    /*
     /// Returns the free (scoped under the root context) sigma type that contains all the variables
     /// from this context.
     pub fn to_sigma(&self) -> Ty<S> {
         let raw_ctx = RawCtx::root();
         let raw_ty = self.raw_ctx.to_sigma(RawTy::unit(self.len()));
         Ty { raw_ctx, raw_ty }
+    }
+    */
+
+    pub fn name(&self) -> Ty<S> {
+        Ty {
+            raw_ctx: self.raw_ctx.clone(),
+            raw_ty: RawTy::name(self.len()),
+        }
+    }
+
+    pub fn tag(&self, tag: &S::Tag) -> Name<S> {
+        Name {
+            raw_ctx: self.raw_ctx.clone(),
+            raw_name: RawName::tag(self.len(), tag.clone()),
+        }
     }
 
     pub fn universe(&self) -> Ty<S> {
@@ -219,30 +193,11 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
-    /*
-    pub fn map_scheme<V: Scheme>(
-        &self,
-        map_user_ty: impl FnMut(&S::UserTy) -> V::UserTy,
-        map_user_term: impl FnMut(&S::UserTm) -> V::UserTm,
-    ) -> Ctx<V> {
-        let mut map_user_ty = map_user_ty;
-        let mut map_user_term = map_user_term;
-
-        let Ctx { raw_ctx } = self;
-        let raw_ctx = raw_ctx.map_scheme(&mut map_user_ty, &mut map_user_term);
-        Ctx { raw_ctx }
-    }
-    */
-}
-
-/*
-impl<S: Scheme> fmt::Debug for Ctx<S> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let Ctx { raw_ctx, ctx_len } = self;
-        let actual_len = pprint::pprint_raw_ctx(f, raw_ctx)?;
-        debug_assert_eq!(actual_len, *ctx_len);
-        Ok(())
+    pub fn non_contextual<T>(&self, val: T) -> NonContextual<S, T> {
+        NonContextual {
+            raw_ctx: self.raw_ctx.clone(),
+            val,
+        }
     }
 }
-*/
 

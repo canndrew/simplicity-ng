@@ -5,23 +5,16 @@ mod term;
 mod stuck;
 mod scope;
 mod nat;
-//mod pack;
+mod name;
 
 pub use self::{
-    contextual::{Contextual, DummyContextual},
+    contextual::{Contextual, BundleOfContextual, NonContextual},
     ctx::Ctx,
     ty::{Ty, TyKind},
     term::{Tm, TmKind},
     stuck::{Stuck, StuckKind},
     scope::Scope,
     nat::{Nat, NatKind},
-    //pack::{ContextualTuple, Pack},
+    name::{Name, NameKind},
 };
-
-/*
-pub struct Parts<N: Name, const ARITY: usize, P: Tuple<N, ARITY>> {
-    raw_ctx: RawCtx<N>,
-    raw_parts: RawParts<N, ARITY, P::TupleRaw>,
-}
-*/
 

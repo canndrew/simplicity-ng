@@ -410,6 +410,14 @@ impl<S: Scheme> RawNat<S> {
         };
         self.max_all.eliminates_var(index)
     }
+
+    pub(crate) fn contains_subterm(&self, subterm: &RawTm<S>) -> bool {
+        if !self.usages.is_superset_of_prefix(&subterm.usages) {
+            return false;
+        }
+        let subterm = subterm.clone_filter_prefix(subterm.usages.len(), &self.usages);
+        self.max_all.contains_subterm(&subterm)
+    }
 }
 
 impl<S: Scheme> MaxAll<S> {
@@ -687,6 +695,10 @@ impl<S: Scheme> MaxAll<S> {
 
     pub fn eliminates_var(&self, index: usize) -> bool {
         self.terms.iter().any(|add_all| add_all.eliminates_var(index))
+    }
+
+    pub(crate) fn contains_subterm(&self, subterm: &RawTm<S>) -> bool {
+        self.terms.iter().any(|add_all| add_all.contains_subterm(subterm))
     }
 }
 
@@ -991,6 +1003,10 @@ impl<S: Scheme> AddAll<S> {
     pub fn eliminates_var(&self, index: usize) -> bool {
         self.terms.keys().any(|mul_all| mul_all.eliminates_var(index))
     }
+
+    pub(crate) fn contains_subterm(&self, subterm: &RawTm<S>) -> bool {
+        self.terms.keys().any(|mul_all| mul_all.contains_subterm(subterm))
+    }
 }
 
 impl<S: Scheme> MulAll<S> {
@@ -1124,6 +1140,10 @@ impl<S: Scheme> MulAll<S> {
 
     pub fn eliminates_var(&self, index: usize) -> bool {
         self.terms.keys().any(|term| term.eliminates_var(index))
+    }
+
+    pub(crate) fn contains_subterm(&self, subterm: &RawTm<S>) -> bool {
+        self.terms.keys().any(|term| term.contains_subterm(subterm))
     }
 }
 

@@ -193,6 +193,11 @@ fn derive_contextual_struct_named(
                 let #ident_raw { #(#field_names,)* } = self;
                 false #(|| #field_names.eliminates_var(index))*
             }
+
+            fn contains_subterm(&self, subterm: ::core_tt::RawTm<#scheme>) -> bool {
+                let #ident_raw { #(#field_names,)* } = self;
+                false #(|| #field_names.contains_subterm(&subterm))*
+            }
         }
 
         impl #impl_generics ::core_tt::Contextual<#scheme> for #ident #type_generics
@@ -260,6 +265,11 @@ fn derive_contextual_struct_named(
             fn eliminates_var(&self, index: usize) -> bool {
                 let #ident { #(#field_names,)* } = self;
                 false #(|| #field_names.eliminates_var(index))*
+            }
+
+            fn contains_subterm(&self, subterm: &::core_tt::RawTm<#scheme>) -> bool {
+                let #ident { #(#field_names,)* } = self;
+                false #(|| #field_names.contains_subterm(subterm))*
             }
         }
     }
@@ -386,6 +396,11 @@ fn derive_contextual_struct_unnamed(
                 let #ident_raw ( #(#field_names,)* ) = self;
                 false #(|| #field_names.eliminates_var(index))*
             }
+
+            fn contains_subterm(&self, subterm: ::core_tt::RawTm<#scheme>) -> bool {
+                let #ident_raw ( #(#field_names,)* ) = self;
+                false #(|| #field_names.contains_subterm(&subterm))*
+            }
         }
 
         impl #impl_generics ::core_tt::Contextual<#scheme> for #ident #type_generics
@@ -453,6 +468,11 @@ fn derive_contextual_struct_unnamed(
             fn eliminates_var(&self, index: usize) -> bool {
                 let #ident ( #(#field_names,)* ) = self;
                 false #(|| #field_names.eliminates_var(index))*
+            }
+
+            fn contains_subterm(&self, subterm: &::core_tt::RawTm<#scheme>) -> bool {
+                let #ident ( #(#field_names,)* ) = self;
+                false #(|| #field_names.contains_subterm(subterm))*
             }
         }
     }
@@ -853,6 +873,43 @@ fn derive_contextual_enum(
         })
     };
 
+    let raw_contains_subterm_branches = {
+        variants
+        .iter()
+        .map(|variant| {
+            let syn::Variant { attrs: _, ident: variant_ident, fields, discriminant: _ } = variant;
+            match fields {
+                Fields::Named(fields) => {
+                    let field_names: Vec<_> = {
+                        fields
+                        .named
+                        .iter()
+                        .map(|field| field.ident.as_ref().unwrap())
+                        .collect()
+                    };
+                    quote! {
+                        #ident_raw::#variant_ident { #(#field_names,)* } => {
+                            false #(|| #field_names.contains_subterm(&subterm))*
+                        },
+                    }
+                },
+                Fields::Unnamed(fields) => {
+                    let field_names: Vec<_> = {
+                        (0..fields.unnamed.len())
+                        .map(|index| format_ident!("field_{}", index))
+                        .collect()
+                    };
+                    quote! {
+                        #ident_raw::#variant_ident(#(#field_names,)*) => {
+                            false #(|| #field_names.contains_subterm(&subterm))*
+                        },
+                    }
+                },
+                Fields::Unit => unreachable!(),
+            }
+        })
+    };
+
     let into_raw_branches = {
         variants
         .iter()
@@ -1006,6 +1063,43 @@ fn derive_contextual_enum(
         })
     };
 
+    let contains_subterm_branches = {
+        variants
+        .iter()
+        .map(|variant| {
+            let syn::Variant { attrs: _, ident: variant_ident, fields, discriminant: _ } = variant;
+            match fields {
+                Fields::Named(fields) => {
+                    let field_names: Vec<_> = {
+                        fields
+                        .named
+                        .iter()
+                        .map(|field| field.ident.as_ref().unwrap())
+                        .collect()
+                    };
+                    quote! {
+                        #ident::#variant_ident { #(#field_names,)* } => {
+                            false #(|| #field_names.contains_subterm(subterm))*
+                        },
+                    }
+                },
+                Fields::Unnamed(fields) => {
+                    let field_names: Vec<_> = {
+                        (0..fields.unnamed.len())
+                        .map(|index| format_ident!("field_{}", index))
+                        .collect()
+                    };
+                    quote! {
+                        #ident::#variant_ident(#(#field_names,)*) => {
+                            false #(|| #field_names.contains_subterm(subterm))*
+                        },
+                    }
+                },
+                Fields::Unit => unreachable!(),
+            }
+        })
+    };
+
 
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
 
@@ -1072,6 +1166,12 @@ fn derive_contextual_enum(
                     #(#raw_eliminates_var_branches)*
                 }
             }
+
+            fn contains_subterm(&self, subterm: ::core_tt::RawTm<#scheme>) -> bool {
+                match self {
+                    #(#raw_contains_subterm_branches)*
+                }
+            }
         }
 
         impl #impl_generics ::core_tt::Contextual<#scheme> for #ident #type_generics
@@ -1107,6 +1207,12 @@ fn derive_contextual_enum(
             fn eliminates_var(&self, index: usize) -> bool {
                 match self {
                     #(#eliminates_var_branches)*
+                }
+            }
+
+            fn contains_subterm(&self, subterm: &::core_tt::RawTm<#scheme>) -> bool {
+                match self {
+                    #(#contains_subterm_branches)*
                 }
             }
         }

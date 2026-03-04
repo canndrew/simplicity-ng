@@ -17,6 +17,8 @@ impl<S: Scheme> Epi<S> {
         rev: impl FnOnce(Tm<S>) -> Tm<S>,
         rev_fwd: impl FnOnce(Tm<S>) -> Tm<S>,
     ) -> Epi<S> {
+        same_ctx!(input_ty, output_ty);
+
         let fwd = input_ty.scope(fwd);
         let rev = output_ty.scope(rev);
         let rev_fwd = output_ty.scope(|term_1| {
@@ -63,11 +65,13 @@ impl<S: Scheme> Epi<S> {
     }
 
     pub fn sum_congruence(
+        lhs_name: &Name<S>,
         lhs_epi: &Epi<S>,
         rhs_epi: &Epi<S>,
     ) -> Epi<S> {
-        let input_ty = Ty::sum(&lhs_epi.input_ty(), &rhs_epi.input_ty());
-        let output_ty = Ty::sum(&lhs_epi.output_ty(), &rhs_epi.output_ty());
+        same_ctx!(lhs_name, lhs_epi, rhs_epi);
+        let input_ty = Ty::sum(&lhs_epi.input_ty(), &lhs_name, &rhs_epi.input_ty());
+        let output_ty = Ty::sum(&lhs_epi.output_ty(), &lhs_name, &rhs_epi.output_ty());
         Epi::new(
             &input_ty,
             &output_ty,
@@ -79,13 +83,13 @@ impl<S: Scheme> Epi<S> {
                         lhs_epi
                         .fwd
                         .bind(&lhs_term)
-                        .inj_lhs(&rhs_epi.output_ty())
+                        .inj_lhs(&lhs_name, &rhs_epi.output_ty())
                     },
                     |rhs_term| {
                         rhs_epi
                         .fwd
                         .bind(&rhs_term)
-                        .inj_rhs(&lhs_epi.output_ty())
+                        .inj_rhs(&lhs_name, &lhs_epi.output_ty())
                     },
                 )
             },
@@ -97,13 +101,13 @@ impl<S: Scheme> Epi<S> {
                         lhs_epi
                         .rev
                         .bind(&lhs_term)
-                        .inj_lhs(&rhs_epi.input_ty())
+                        .inj_lhs(&lhs_name, &rhs_epi.input_ty())
                     },
                     |rhs_term| {
                         rhs_epi
                         .rev
                         .bind(&rhs_term)
-                        .inj_rhs(&lhs_epi.input_ty())
+                        .inj_rhs(&lhs_name, &lhs_epi.input_ty())
                     },
                 )
             },
@@ -119,13 +123,13 @@ impl<S: Scheme> Epi<S> {
                                 lhs_epi
                                 .rev
                                 .bind(&lhs_term)
-                                .inj_lhs(&rhs_epi.input_ty())
+                                .inj_lhs(&lhs_name, &rhs_epi.input_ty())
                             },
                             |rhs_term| {
                                 rhs_epi
                                 .rev
                                 .bind(&rhs_term)
-                                .inj_rhs(&lhs_epi.input_ty())
+                                .inj_rhs(&lhs_name, &lhs_epi.input_ty())
                             },
                         )
                         .case(
@@ -134,13 +138,13 @@ impl<S: Scheme> Epi<S> {
                                 lhs_epi
                                 .fwd
                                 .bind(&lhs_term)
-                                .inj_lhs(&rhs_epi.output_ty())
+                                .inj_lhs(&lhs_name, &rhs_epi.output_ty())
                             },
                             |rhs_term| {
                                 rhs_epi
                                 .fwd
                                 .bind(&rhs_term)
-                                .inj_rhs(&lhs_epi.output_ty())
+                                .inj_rhs(&lhs_name, &lhs_epi.output_ty())
                             },
                         )
                         .equals(&term)
@@ -148,12 +152,12 @@ impl<S: Scheme> Epi<S> {
                     |lhs_term| {
                         lhs_epi
                         .rev_fwd(&lhs_term)
-                        .map_eq(|lhs_term| lhs_term.inj_lhs(&rhs_epi.output_ty()))
+                        .map_eq(|lhs_term| lhs_term.inj_lhs(&lhs_name, &rhs_epi.output_ty()))
                     },
                     |rhs_term| {
                         rhs_epi
                         .rev_fwd(&rhs_term)
-                        .map_eq(|rhs_term| rhs_term.inj_rhs(&lhs_epi.output_ty()))
+                        .map_eq(|rhs_term| rhs_term.inj_rhs(&lhs_name, &lhs_epi.output_ty()))
                     },
                 )
             },
@@ -161,11 +165,13 @@ impl<S: Scheme> Epi<S> {
     }
 
     pub fn non_dependent_sigma_head_congruence(
+        head_name: &Name<S>,
         head_epi: &Epi<S>,
         tail_ty: &Ty<S>,
     ) -> Epi<S> {
-        let input_ty = head_epi.input_ty().sigma(|_| tail_ty.clone());
-        let output_ty = head_epi.output_ty().sigma(|_| tail_ty.clone());
+        same_ctx!(head_name, head_epi, tail_ty);
+        let input_ty = head_epi.input_ty().sigma(&head_name, |_| tail_ty.clone());
+        let output_ty = head_epi.output_ty().sigma(&head_name, |_| tail_ty.clone());
 
         Epi::new(
             &input_ty,
@@ -173,12 +179,12 @@ impl<S: Scheme> Epi<S> {
             |term| {
                 head_epi
                 .fwd(&term.proj_head())
-                .pair(|_| tail_ty.clone(), &term.proj_tail())
+                .pair(&head_name, |_| tail_ty.clone(), &term.proj_tail())
             },
             |term| {
                 head_epi
                 .rev(&term.proj_head())
-                .pair(|_| tail_ty.clone(), &term.proj_tail())
+                .pair(&head_name, |_| tail_ty.clone(), &term.proj_tail())
             },
             |term| {
                 head_epi
@@ -186,15 +192,15 @@ impl<S: Scheme> Epi<S> {
                 .cong(
                     |head_0, head_1, _| {
                         head_0
-                        .pair(|_| tail_ty.clone(), &term.proj_tail())
+                        .pair(&head_name, |_| tail_ty.clone(), &term.proj_tail())
                         .equals(
                             &head_1
-                            .pair(|_| tail_ty.clone(), &term.proj_tail())
+                            .pair(&head_name, |_| tail_ty.clone(), &term.proj_tail())
                         )
                     },
                     |head| {
                         head
-                        .pair(|_| tail_ty.clone(), &term.proj_tail())
+                        .pair(&head_name, |_| tail_ty.clone(), &term.proj_tail())
                         .refl()
                     },
                 )
@@ -205,15 +211,17 @@ impl<S: Scheme> Epi<S> {
 
 #[extension(pub trait ScopeEpiExt)]
 impl<S: Scheme> Scope<S, Epi<S>> {
-    fn sigma_tail_congruence(&self) -> Epi<S> {
-        let input_tail_ty = self.map(|_, epi| epi.input_ty());
-        let output_tail_ty = self.map(|_, epi| epi.output_ty());
-        let tail_fwd = self.map(|_, epi| epi.fwd.clone());
-        let tail_rev = self.map(|_, epi| epi.rev.clone());
-        let tail_rev_fwd = self.map(|_, epi| epi.rev_fwd.clone());
+    fn sigma_tail_congruence(&self, head_name: &Name<S>) -> Epi<S> {
+        let (tail_epi, head_name) = Ctx::into_common_ctx((self, head_name));
 
-        let input_ty = input_tail_ty.to_sigma();
-        let output_ty = output_tail_ty.to_sigma();
+        let input_tail_ty = tail_epi.map(|_, epi| epi.input_ty());
+        let output_tail_ty = tail_epi.map(|_, epi| epi.output_ty());
+        let tail_fwd = tail_epi.map(|_, epi| epi.fwd.clone());
+        let tail_rev = tail_epi.map(|_, epi| epi.rev.clone());
+        let tail_rev_fwd = tail_epi.map(|_, epi| epi.rev_fwd.clone());
+
+        let input_ty = input_tail_ty.to_sigma(&head_name);
+        let output_ty = output_tail_ty.to_sigma(&head_name);
 
         Epi::new(
             &input_ty,
@@ -222,6 +230,7 @@ impl<S: Scheme> Scope<S, Epi<S>> {
                 term
                 .proj_head()
                 .pair(
+                    &head_name,
                     |head| output_tail_ty.bind(&head),
                     &tail_fwd.bind(&term.proj_head()).bind(&term.proj_tail()),
                 )
@@ -230,6 +239,7 @@ impl<S: Scheme> Scope<S, Epi<S>> {
                 term
                 .proj_head()
                 .pair(
+                    &head_name,
                     |head| input_tail_ty.bind(&head),
                     &tail_rev.bind(&term.proj_head()).bind(&term.proj_tail()),
                 )
@@ -241,7 +251,7 @@ impl<S: Scheme> Scope<S, Epi<S>> {
                 .map_eq(|tail| {
                     tail
                     .proj_head()
-                    .pair(|head| output_tail_ty.bind(&head), &tail)
+                    .pair(&head_name, |head| output_tail_ty.bind(&head), &tail)
                 })
             },
         )

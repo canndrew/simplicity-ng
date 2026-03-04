@@ -1,21 +1,25 @@
 use crate::priv_prelude::*;
 
-#[derive_where(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive_where(Clone)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Ty<S: Scheme> {
     pub(crate) raw_ctx: RawCtx<S>,
     pub(crate) raw_ty: RawTy<S>,
 }
 
-#[derive_where(Clone)]
+impl<S: Scheme> PartialEq for Ty<S> {
+    fn eq(&self, other: &Ty<S>) -> bool {
+        let (_, (ty_0, ty_1)) = merge_ctxs((self, other));
+        ty_0 == ty_1
+    }
+}
+
+#[derive_where(Clone, Debug)]
 pub enum TyKind<S: Scheme> {
     Stuck {
         stuck: Stuck<S>,
     },
-    Tagged {
-        tag: S::Tag,
-        inner_ty: Ty<S>,
-    },
+    Name,
     Universe,
     Nat,
     Equal {
@@ -25,13 +29,16 @@ pub enum TyKind<S: Scheme> {
     Never,
     Unit,
     Sum {
+        lhs_name: Name<S>,
         lhs_ty: Ty<S>,
         rhs_ty: Ty<S>,
     },
     Sigma {
+        head_name: Name<S>,
         tail_ty: Scope<S, Ty<S>>,
     },
     Pi {
+        arg_name: Name<S>,
         res_ty: Scope<S, Ty<S>>,
     },
 }
@@ -60,6 +67,10 @@ impl<S: Scheme> Contextual<S> for Ty<S> {
     fn eliminates_var(&self, index: usize) -> bool {
         self.raw_ty.eliminates_var(index)
     }
+
+    fn contains_subterm(&self, subterm: &RawTm<S>) -> bool {
+        self.raw_ty.contains_subterm(subterm)
+    }
 }
 
 impl<S: Scheme> Ty<S> {
@@ -79,20 +90,21 @@ impl<S: Scheme> Ty<S> {
         usages
     }
 
-    pub fn with_ctx(&self, ctx: &Ctx<S>) -> Ty<S> {
-        let diff = ctx.len().strict_sub(self.raw_ty.usages.len());
-        assert_eq!(&self.raw_ctx, ctx.raw_ctx.nth_parent(diff));
-        let raw_ctx = ctx.raw_ctx.clone();
-        let raw_ty = self.raw_ty.clone_weaken(diff);
-        Ty { raw_ctx, raw_ty }
-    }
-
     pub fn cons(&self) -> Ctx<S> {
         self.ctx().cons(self)
     }
 
     pub fn with_cons<T>(&self, func: impl FnOnce(Tm<S>) -> T) -> T {
-        self.ctx().with_cons(self, func)
+        let ctx_len = self.raw_ctx.len();
+        let raw_typed_term = RawTyped::from_parts(
+            self.raw_ty.clone_weaken(1),
+            RawTm::var(ctx_len + 1, ctx_len, &self.raw_ty),
+        );
+        let var_term = Tm {
+            raw_ctx: self.raw_ctx.cons(self.raw_ty.clone()),
+            raw_typed_term,
+        };
+        func(var_term)
     }
 
     pub fn contains_var(&self, index: usize) -> bool {
@@ -101,8 +113,12 @@ impl<S: Scheme> Ty<S> {
 
     pub fn to_scope(&self) -> Scope<S, Ty<S>> {
         let Ty { raw_ctx, raw_ty } = self;
-        let RawTyKind::Pi { res_ty } = raw_ty.weak.get_clone() else {
-            unreachable!()
+        let RawTyKind::Pi { arg_name: _, res_ty } = raw_ty.weak.get_clone() else {
+            panic!("\
+                to_scope(): self is not a pi type.\n\
+                self: {:?}",
+                self,
+            );
         };
         let res_ty = res_ty.clone_unfilter(&raw_ty.usages);
         Scope {
@@ -123,13 +139,7 @@ impl<S: Scheme> Ty<S> {
                 };
                 TyKind::Stuck { stuck }
             },
-            RawTyKind::Tagged { tag, inner_ty } => {
-                let inner_ty = Ty {
-                    raw_ctx: raw_ctx.clone(),
-                    raw_ty: Weaken { usages: raw_ty.usages.clone(), weak: inner_ty },
-                };
-                TyKind::Tagged { tag, inner_ty }
-            },
+            RawTyKind::Name => TyKind::Name,
             RawTyKind::Universe => TyKind::Universe,
             RawTyKind::Nat => TyKind::Nat,
             RawTyKind::Equal { eq_ty, eq_term_0, eq_term_1 } => {
@@ -150,9 +160,14 @@ impl<S: Scheme> Ty<S> {
             },
             RawTyKind::Never => TyKind::Never,
             RawTyKind::Unit => TyKind::Unit,
-            RawTyKind::Sum { lhs_ty, rhs_ty } => {
+            RawTyKind::Sum { lhs_name, lhs_ty, rhs_ty } => {
+                let lhs_name = lhs_name.clone_unfilter(&raw_ty.usages);
                 let lhs_ty = lhs_ty.clone_unfilter(&raw_ty.usages);
                 let rhs_ty = rhs_ty.clone_unfilter(&raw_ty.usages);
+                let lhs_name = Name {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_name: lhs_name,
+                };
                 let lhs_ty = Ty {
                     raw_ctx: raw_ctx.clone(),
                     raw_ty: lhs_ty,
@@ -161,75 +176,90 @@ impl<S: Scheme> Ty<S> {
                     raw_ctx: raw_ctx.clone(),
                     raw_ty: rhs_ty,
                 };
-                TyKind::Sum { lhs_ty, rhs_ty }
+                TyKind::Sum { lhs_name, lhs_ty, rhs_ty }
             },
-            RawTyKind::Sigma { tail_ty } => {
+            RawTyKind::Sigma { head_name, tail_ty } => {
+                let head_name = head_name.clone_unfilter(&raw_ty.usages);
                 let tail_ty = tail_ty.clone_unfilter(&raw_ty.usages);
+                let head_name = Name {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_name: head_name,
+                };
                 let tail_ty = Scope {
                     raw_ctx: raw_ctx.clone(),
                     raw_scope: tail_ty,
                 };
-                TyKind::Sigma { tail_ty }
+                TyKind::Sigma { head_name, tail_ty }
             },
-            RawTyKind::Pi { res_ty } => {
+            RawTyKind::Pi { arg_name, res_ty } => {
+                let arg_name = arg_name.clone_unfilter(&raw_ty.usages);
                 let res_ty = res_ty.clone_unfilter(&raw_ty.usages);
+                let arg_name = Name {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_name: arg_name,
+                };
                 let res_ty = Scope {
                     raw_ctx: raw_ctx.clone(),
                     raw_scope: res_ty,
                 };
-                TyKind::Pi { res_ty }
+                TyKind::Pi { arg_name, res_ty }
             },
         }
     }
 
     pub fn sum(
         &self,
+        lhs_name: &Name<S>,
         rhs_ty: &Ty<S>,
     ) -> Ty<S> {
-        let (ctx, lhs_ty, rhs_ty) = Ctx::merge_into_ctx_2(self, rhs_ty);
+        let (ctx, (lhs_name, lhs_ty, rhs_ty)) = merge_ctxs((lhs_name, self, rhs_ty));
         let raw_ctx = ctx.raw_ctx;
-        let raw_ty = RawTy::sum(lhs_ty, rhs_ty);
+        let raw_ty = RawTy::sum(lhs_name, lhs_ty, rhs_ty);
         Ty { raw_ctx, raw_ty }
     }
 
     pub fn sigma(
         &self,
+        head_name: &Name<S>,
         tail_ty: impl FnOnce(Tm<S>) -> Ty<S>,
     ) -> Ty<S> {
-        let head_ty = self;
-        let tail_ty = raw_scope(&head_ty.raw_ctx, &head_ty.raw_ty, tail_ty);
+        let (ctx, (head_name, head_ty)) = merge_ctxs((head_name, self));
+        let raw_ctx = ctx.raw_ctx;
+        let tail_ty = raw_scope(&raw_ctx, &head_ty, tail_ty);
 
-        let raw_ctx = head_ty.raw_ctx.clone();
-        let raw_ty = RawTy::sigma(tail_ty);
+        let raw_ty = RawTy::sigma(head_name, tail_ty);
         Ty { raw_ctx, raw_ty }
     }
 
     pub fn pi(
         &self,
+        arg_name: &Name<S>,
         res_ty: impl FnOnce(Tm<S>) -> Ty<S>,
     ) -> Ty<S> {
-        let arg_ty = self;
-        let res_ty = raw_scope(&arg_ty.raw_ctx, &arg_ty.raw_ty, res_ty);
+        let (ctx, (arg_name, arg_ty)) = merge_ctxs((arg_name, self));
+        let raw_ctx = ctx.raw_ctx;
+        let res_ty = raw_scope(&raw_ctx, &arg_ty, res_ty);
 
-        let raw_ctx = arg_ty.raw_ctx.clone();
-        let raw_ty = RawTy::pi(res_ty);
+        let raw_ty = RawTy::pi(arg_name, res_ty);
         Ty { raw_ctx, raw_ty }
     }
 
     pub fn func(
         &self,
+        arg_name: &Name<S>,
         res_term: impl FnOnce(Tm<S>) -> Tm<S>,
     ) -> Tm<S> {
-        let arg_ty = self;
-        let res_term = raw_scope(&arg_ty.raw_ctx, &arg_ty.raw_ty, res_term);
+        let (ctx, (arg_name, arg_ty)) = merge_ctxs((arg_name, self));
+        let raw_ctx = ctx.raw_ctx;
+        let res_term = raw_scope(&raw_ctx, &arg_ty, res_term);
 
         let (res_ty, res_term) = res_term.into_parts();
 
-        let ty = RawTy::pi(res_ty);
-        let term = RawTm::func(res_term);
+        let ty = RawTy::pi(arg_name.clone(), res_ty);
+        let term = RawTm::func(arg_name, res_term);
         let term = RawTyped::from_parts(ty, term);
 
-        Tm { raw_ctx: arg_ty.raw_ctx.clone(), raw_typed_term: term }
+        Tm { raw_ctx, raw_typed_term: term }
     }
 
     pub fn scope<T: Contextual<S>>(&self, func: impl FnOnce(Tm<S>) -> T) -> Scope<S, T> {
@@ -284,13 +314,6 @@ impl<S: Scheme> Ty<S> {
         })
     }
 
-    pub fn tagged(&self, tag: S::Tag) -> Ty<S> {
-        let Ty { raw_ctx, raw_ty } = self;
-        let raw_ty = RawTy::tagged(tag, raw_ty.clone());
-        Ty { raw_ctx: raw_ctx.clone(), raw_ty }
-    }
-
-    /*
     pub fn unwrap_universe(&self) {
         match self.kind() {
             TyKind::Universe => (),
@@ -322,7 +345,7 @@ impl<S: Scheme> Ty<S> {
             TyKind::Equal { eq_term_0, eq_term_1 } => (eq_term_0, eq_term_1),
             _ => {
                 panic!(
-                    "unwrap_nat(): self is not an equality type.\n\
+                    "unwrap_equal(): self is not an equality type.\n\
                     self: {:?}",
                     self,
                 );
@@ -335,7 +358,7 @@ impl<S: Scheme> Ty<S> {
             TyKind::Never => (),
             _ => {
                 panic!(
-                    "unwrap_nat(): self is not never.\n\
+                    "unwrap_never(): self is not never.\n\
                     self: {:?}",
                     self,
                 );
@@ -356,12 +379,12 @@ impl<S: Scheme> Ty<S> {
         }
     }
 
-    pub fn unwrap_sum(&self) -> (Ty<S>, Ty<S>) {
+    pub fn unwrap_sum(&self) -> (Name<S>, Ty<S>, Ty<S>) {
         match self.kind() {
-            TyKind::Sum { lhs_ty, rhs_ty } => (lhs_ty, rhs_ty),
+            TyKind::Sum { lhs_name, lhs_ty, rhs_ty } => (lhs_name, lhs_ty, rhs_ty),
             _ => {
                 panic!(
-                    "unwrap_unit(): self is not a sum type.\n\
+                    "unwrap_sum(): self is not a sum type.\n\
                     self: {:?}",
                     self,
                 );
@@ -369,12 +392,12 @@ impl<S: Scheme> Ty<S> {
         }
     }
 
-    pub fn unwrap_sigma(&self) -> Scope<S, Ty<S>> {
+    pub fn unwrap_sigma(&self) -> (Name<S>, Scope<S, Ty<S>>) {
         match self.kind() {
-            TyKind::Sigma { tail_ty } => tail_ty,
+            TyKind::Sigma { head_name, tail_ty } => (head_name, tail_ty),
             _ => {
                 panic!(
-                    "unwrap_unit(): self is not a sigma type.\n\
+                    "unwrap_sigma(): self is not a sigma type.\n\
                     self: {:?}",
                     self,
                 );
@@ -382,18 +405,17 @@ impl<S: Scheme> Ty<S> {
         }
     }
 
-    pub fn unwrap_pi(&self) -> Scope<S, Ty<S>> {
+    pub fn unwrap_pi(&self) -> (Name<S>, Scope<S, Ty<S>>) {
         match self.kind() {
-            TyKind::Pi { res_ty } => res_ty,
+            TyKind::Pi { arg_name, res_ty } => (arg_name, res_ty),
             _ => {
                 panic!(
-                    "unwrap_unit(): self is not a pi type.\n\
+                    "unwrap_pi(): self is not a pi type.\n\
                     self: {:?}",
                     self,
                 );
             },
         }
     }
-    */
 }
 

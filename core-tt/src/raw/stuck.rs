@@ -5,11 +5,6 @@ pub type RawStuck<S> = Weaken<Intern<RawStuckKind<S>>>;
 #[derive_where(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RawStuckKind<S: Scheme> {
     Var,
-    StripTag {
-        tag: S::Tag,
-        untagged_ty: RawTy<S>,
-        elim: RawStuck<S>,
-    },
     ForLoop {
         elim: RawStuck<S>,
         motive: RawScope<S, Intern<RawTyKind<S>>>,
@@ -37,38 +32,33 @@ pub enum RawStuckKind<S: Scheme> {
         motive: RawScope<S, Intern<RawTyKind<S>>>,
     },
     Case {
+        lhs_name: RawName<S>,
         elim: RawStuck<S>,
         motive: RawScope<S, Intern<RawTyKind<S>>>,
         lhs_inhab: RawScope<S, Intern<RawTmKind<S>>>,
         rhs_inhab: RawScope<S, Intern<RawTmKind<S>>>,
     },
     ProjHead {
+        head_name: RawName<S>,
         tail_ty: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawStuck<S>,
     },
     ProjTail {
+        head_name: RawName<S>,
         tail_ty: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawStuck<S>,
     },
     App {
+        arg_name: RawName<S>,
         res_ty: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawStuck<S>,
         arg_term: RawTm<S>,
     },
 
-    TaggedEqTagInjective {
-        tag_0: S::Tag,
-        tag_1: S::Tag,
-        untagged_ty_0: RawTy<S>,
-        untagged_ty_1: RawTy<S>,
-        elim: RawStuck<S>,
-    },
 
-    TaggedEqInnerInjective {
+    TagsApart {
         tag_0: S::Tag,
         tag_1: S::Tag,
-        untagged_ty_0: RawTy<S>,
-        untagged_ty_1: RawTy<S>,
         elim: RawStuck<S>,
     },
 
@@ -82,8 +72,7 @@ pub enum RawStuckKind<S: Scheme> {
         elim: RawStuck<S>,
     },
     EqualEqEqTerm0Injective {
-        eq_ty_0: RawTy<S>,
-        eq_ty_1: RawTy<S>,
+        eq_ty: RawTy<S>,
         eq_term_0_0: RawTm<S>,
         eq_term_0_1: RawTm<S>,
         eq_term_1_0: RawTm<S>,
@@ -91,8 +80,7 @@ pub enum RawStuckKind<S: Scheme> {
         elim: RawStuck<S>,
     },
     EqualEqEqTerm1Injective {
-        eq_ty_0: RawTy<S>,
-        eq_ty_1: RawTy<S>,
+        eq_ty: RawTy<S>,
         eq_term_0_0: RawTm<S>,
         eq_term_0_1: RawTm<S>,
         eq_term_1_0: RawTm<S>,
@@ -100,7 +88,18 @@ pub enum RawStuckKind<S: Scheme> {
         elim: RawStuck<S>,
     },
 
+    SumEqNameInjective {
+        lhs_name_0: RawName<S>,
+        lhs_name_1: RawName<S>,
+        lhs_ty_0: RawTy<S>,
+        lhs_ty_1: RawTy<S>,
+        rhs_ty_0: RawTy<S>,
+        rhs_ty_1: RawTy<S>,
+        elim: RawStuck<S>,
+    },
     SumEqLhsInjective {
+        lhs_name_0: RawName<S>,
+        lhs_name_1: RawName<S>,
         lhs_ty_0: RawTy<S>,
         lhs_ty_1: RawTy<S>,
         rhs_ty_0: RawTy<S>,
@@ -108,6 +107,8 @@ pub enum RawStuckKind<S: Scheme> {
         elim: RawStuck<S>,
     },
     SumEqRhsInjective {
+        lhs_name_0: RawName<S>,
+        lhs_name_1: RawName<S>,
         lhs_ty_0: RawTy<S>,
         lhs_ty_1: RawTy<S>,
         rhs_ty_0: RawTy<S>,
@@ -115,23 +116,43 @@ pub enum RawStuckKind<S: Scheme> {
         elim: RawStuck<S>,
     },
 
+    SigmaEqNameInjective {
+        head_name_0: RawName<S>,
+        head_name_1: RawName<S>,
+        tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
+        tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
+        elim: RawStuck<S>,
+    },
     SigmaEqHeadInjective {
+        head_name_0: RawName<S>,
+        head_name_1: RawName<S>,
         tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawStuck<S>,
     },
     SigmaEqTailInjective {
+        head_name: RawName<S>,
         tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawStuck<S>,
     },
 
+    PiEqNameInjective {
+        arg_name_0: RawName<S>,
+        arg_name_1: RawName<S>,
+        res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
+        res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
+        elim: RawStuck<S>,
+    },
     PiEqArgInjective {
+        arg_name_0: RawName<S>,
+        arg_name_1: RawName<S>,
         res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawStuck<S>,
     },
     PiEqResInjective {
+        arg_name: RawName<S>,
         res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawStuck<S>,
@@ -153,16 +174,6 @@ impl<S: Scheme> RawStuck<S> {
             usages: Usages::single_one(ctx_len, index),
             weak: RawStuckKind::var(),
         }
-    }
-
-    pub(crate) fn strip_tag(
-        tag: S::Tag,
-        mut untagged_ty: RawTy<S>,
-        mut elim: RawStuck<S>,
-    ) -> RawStuck<S> {
-        let usages = Usages::merge_mut([&mut untagged_ty.usages, &mut elim.usages]);
-        let weak = Intern::new(RawStuckKind::StripTag { tag, untagged_ty, elim });
-        Weaken { usages, weak }
     }
 
     pub(crate) fn for_loop(
@@ -243,6 +254,10 @@ impl<S: Scheme> RawStuck<S> {
         mut elim: RawStuck<S>,
         mut motive: RawScope<S, Intern<RawTyKind<S>>>,
     ) -> RawStuck<S> {
+        if let RawTyKind::Never = motive.weak.inner.weak.get_clone() {
+            return elim;
+        }
+
         let usages = Usages::merge_mut([
             &mut elim.usages,
             &mut motive.usages,
@@ -253,60 +268,100 @@ impl<S: Scheme> RawStuck<S> {
     }
 
     pub(crate) fn case(
+        mut lhs_name: RawName<S>,
         mut elim: RawStuck<S>,
         mut motive: RawScope<S, Intern<RawTyKind<S>>>,
         mut lhs_inhab: RawScope<S, Intern<RawTmKind<S>>>,
         mut rhs_inhab: RawScope<S, Intern<RawTmKind<S>>>,
     ) -> RawStuck<S> {
+        if let Some(var_index) = lhs_inhab.weak.inner.usages.len().checked_sub(1)
+        && lhs_inhab.weak.inner.usages.is_single(var_index)
+        && let Some(var_index) = rhs_inhab.weak.inner.usages.len().checked_sub(1)
+        && rhs_inhab.weak.inner.usages.is_single(var_index)
+        && let RawTmKind::InjLhs { lhs_term } = lhs_inhab.weak.inner.weak.get_clone()
+        && let RawTmKind::Stuck { stuck } = lhs_term.weak.get_clone()
+        && let RawStuckKind::Var = stuck.weak.get_clone()
+        && let RawTmKind::InjRhs { rhs_term } = rhs_inhab.weak.inner.weak.get_clone()
+        && let RawTmKind::Stuck { stuck } = rhs_term.weak.get_clone()
+        && let RawStuckKind::Var = stuck.weak.get_clone()
+        && let RawTyKind::Sum {
+            lhs_name: motive_lhs_name, lhs_ty, rhs_ty,
+        } = motive.weak.inner.weak.get_clone()
+        && motive_lhs_name == lhs_name
+        && {
+            let mut motive_lhs_ty = lhs_ty.unfilter(&motive.weak.inner.usages);
+            let var_used = motive_lhs_ty.usages.pop();
+            !var_used && {
+                motive_lhs_ty.unfilter(&motive.usages) == lhs_inhab.var_ty_unfiltered()
+            }
+        }
+        && {
+            let mut motive_rhs_ty = rhs_ty.unfilter(&motive.weak.inner.usages);
+            let var_used = motive_rhs_ty.usages.pop();
+            !var_used && {
+                motive_rhs_ty.unfilter(&motive.usages) == rhs_inhab.var_ty_unfiltered()
+            }
+        }
+        {
+            return elim;
+        }
+
         let usages = Usages::merge_mut([
+            &mut lhs_name.usages,
             &mut elim.usages,
             &mut motive.usages,
             &mut lhs_inhab.usages,
             &mut rhs_inhab.usages,
         ]);
 
-        let weak = Intern::new(RawStuckKind::Case { elim, motive, lhs_inhab, rhs_inhab });
+        let weak = Intern::new(RawStuckKind::Case { lhs_name, elim, motive, lhs_inhab, rhs_inhab });
         Weaken { usages, weak }
     }
 
     pub(crate) fn proj_head(
+        mut head_name: RawName<S>,
         mut tail_ty: RawScope<S, Intern<RawTyKind<S>>>,
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut head_name.usages,
             &mut tail_ty.usages,
             &mut elim.usages,
         ]);
 
-        let weak = Intern::new(RawStuckKind::ProjHead { tail_ty, elim });
+        let weak = Intern::new(RawStuckKind::ProjHead { head_name, tail_ty, elim });
         Weaken { usages, weak }
     }
 
     pub(crate) fn proj_tail(
+        mut head_name: RawName<S>,
         mut tail_ty: RawScope<S, Intern<RawTyKind<S>>>,
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut head_name.usages,
             &mut tail_ty.usages,
             &mut elim.usages,
         ]);
 
-        let weak = Intern::new(RawStuckKind::ProjTail { tail_ty, elim });
+        let weak = Intern::new(RawStuckKind::ProjTail { head_name, tail_ty, elim });
         Weaken { usages, weak }
     }
 
     pub(crate) fn app(
+        mut arg_name: RawName<S>,
         mut res_ty: RawScope<S, Intern<RawTyKind<S>>>,
         mut elim: RawStuck<S>,
         mut arg_term: RawTm<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut arg_name.usages,
             &mut res_ty.usages,
             &mut elim.usages,
             &mut arg_term.usages,
         ]);
 
-        let weak = Intern::new(RawStuckKind::App { res_ty ,elim, arg_term });
+        let weak = Intern::new(RawStuckKind::App { arg_name, res_ty ,elim, arg_term });
         Weaken { usages, weak }
     }
 
@@ -325,12 +380,12 @@ impl<S: Scheme> RawStuck<S> {
                 let ctx_len = zero_inhab.usages.len();
                 let zero_inhab_term = zero_inhab.unique_eta_term_opt(ty_var_etas)?;
                 let succ_inhab_term = {
-                    let mut succ_inhab_inner = {
+                    let succ_inhab_inner = {
                         succ_inhab
                         .inner_unfiltered_with_var()
                         .inner_unfiltered_with_var()
+                        .weaken(1)
                     };
-                    succ_inhab_inner.weaken(1);
 
                     ty_var_etas.push((ctx_len + 1, ctx_len + 2));
                     let succ_inhab_term = succ_inhab_inner.unique_eta_term_opt(ty_var_etas)?;
@@ -485,7 +540,7 @@ impl<S: Scheme> RawStuck<S> {
                 Some(term.unfilter(&self.usages))
             },
 
-            RawStuckKind::Case { elim, motive, lhs_inhab, rhs_inhab } => {
+            RawStuckKind::Case { lhs_name, elim, motive, lhs_inhab, rhs_inhab } => {
                 debug_assert!(matches!(motive.weak.inner.weak.get_clone(), RawTyKind::Universe));
                 let inner_ctx_len = elim.usages.len();
                 let lhs_inhab_term = lhs_inhab.unique_eta_term_opt(ty_var_etas)?;
@@ -495,11 +550,13 @@ impl<S: Scheme> RawStuck<S> {
 
                 let term = RawTm::stuck(
                     RawStuck::case(
-                        elim.clone(),
+                        lhs_name.clone(),
+                        elim,
                         RawScope::new(
-                            RawTy::sum(lhs_ty, rhs_ty),
+                            RawTy::sum(lhs_name.clone(), lhs_ty, rhs_ty),
                             RawTy::stuck(
                                 RawStuck::case(
+                                    lhs_name.clone_weaken(1),
                                     RawStuck::var(inner_ctx_len + 1, inner_ctx_len),
                                     motive.clone_weaken(1),
                                     lhs_inhab.clone_weaken(1),
@@ -514,60 +571,34 @@ impl<S: Scheme> RawStuck<S> {
                 Some(term.unfilter(&self.usages))
             },
 
-            RawStuckKind::StripTag { .. } => None,
             RawStuckKind::ProjHead { .. } => None,
             RawStuckKind::ProjTail { .. } => None,
             RawStuckKind::App { .. } => None,
 
-            RawStuckKind::TaggedEqTagInjective { .. } => None,
-            RawStuckKind::TaggedEqInnerInjective { .. } => None,
+            RawStuckKind::TagsApart { .. } => None,
             RawStuckKind::EqualEqEqTyInjective { .. } => None,
             RawStuckKind::EqualEqEqTerm0Injective { .. } => None,
             RawStuckKind::EqualEqEqTerm1Injective { .. } => None,
+            RawStuckKind::SumEqNameInjective { .. } => None,
             RawStuckKind::SumEqLhsInjective { .. } => None,
             RawStuckKind::SumEqRhsInjective { .. } => None,
+            RawStuckKind::SigmaEqNameInjective { .. } => None,
             RawStuckKind::SigmaEqHeadInjective { .. } => None,
             RawStuckKind::SigmaEqTailInjective { .. } => None,
+            RawStuckKind::PiEqNameInjective { .. } => None,
             RawStuckKind::PiEqArgInjective { .. } => None,
             RawStuckKind::PiEqResInjective { .. } => None,
         }
     }
 
-    pub(crate) fn tagged_eq_tag_injective(
+    pub(crate) fn tags_apart(
         tag_0: S::Tag,
         tag_1: S::Tag,
-        mut untagged_ty_0: RawTy<S>,
-        mut untagged_ty_1: RawTy<S>,
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
-        let usages = Usages::merge_mut([
-            &mut untagged_ty_0.usages,
-            &mut untagged_ty_1.usages,
-            &mut elim.usages,
-        ]);
+        let usages = Usages::merge_mut([&mut elim.usages]);
 
-        let weak = Intern::new(RawStuckKind::TaggedEqTagInjective {
-            tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-        });
-        Weaken { usages, weak }
-    }
-
-    pub(crate) fn tagged_eq_inner_injective(
-        tag_0: S::Tag,
-        tag_1: S::Tag,
-        mut untagged_ty_0: RawTy<S>,
-        mut untagged_ty_1: RawTy<S>,
-        mut elim: RawStuck<S>,
-    ) -> RawStuck<S> {
-        let usages = Usages::merge_mut([
-            &mut untagged_ty_0.usages,
-            &mut untagged_ty_1.usages,
-            &mut elim.usages,
-        ]);
-
-        let weak = Intern::new(RawStuckKind::TaggedEqInnerInjective {
-            tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-        });
+        let weak = Intern::new(RawStuckKind::TagsApart { tag_0, tag_1, elim });
         Weaken { usages, weak }
     }
 
@@ -600,8 +631,7 @@ impl<S: Scheme> RawStuck<S> {
     }
 
     pub(crate) fn equal_eq_eq_term_0_injective(
-        mut eq_ty_0: RawTy<S>,
-        mut eq_ty_1: RawTy<S>,
+        mut eq_ty: RawTy<S>,
         mut eq_term_0_0: RawTm<S>,
         mut eq_term_0_1: RawTm<S>,
         mut eq_term_1_0: RawTm<S>,
@@ -609,8 +639,7 @@ impl<S: Scheme> RawStuck<S> {
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
-            &mut eq_ty_0.usages,
-            &mut eq_ty_1.usages,
+            &mut eq_ty.usages,
             &mut eq_term_0_0.usages,
             &mut eq_term_0_1.usages,
             &mut eq_term_1_0.usages,
@@ -619,7 +648,7 @@ impl<S: Scheme> RawStuck<S> {
         ]);
 
         let weak = Intern::new(RawStuckKind::EqualEqEqTerm0Injective {
-            eq_ty_0, eq_ty_1,
+            eq_ty,
             eq_term_0_0, eq_term_0_1,
             eq_term_1_0, eq_term_1_1,
             elim,
@@ -628,8 +657,7 @@ impl<S: Scheme> RawStuck<S> {
     }
 
     pub(crate) fn equal_eq_eq_term_1_injective(
-        mut eq_ty_0: RawTy<S>,
-        mut eq_ty_1: RawTy<S>,
+        mut eq_ty: RawTy<S>,
         mut eq_term_0_0: RawTm<S>,
         mut eq_term_0_1: RawTm<S>,
         mut eq_term_1_0: RawTm<S>,
@@ -637,8 +665,7 @@ impl<S: Scheme> RawStuck<S> {
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
-            &mut eq_ty_0.usages,
-            &mut eq_ty_1.usages,
+            &mut eq_ty.usages,
             &mut eq_term_0_0.usages,
             &mut eq_term_0_1.usages,
             &mut eq_term_1_0.usages,
@@ -647,7 +674,7 @@ impl<S: Scheme> RawStuck<S> {
         ]);
 
         let weak = Intern::new(RawStuckKind::EqualEqEqTerm1Injective {
-            eq_ty_0, eq_ty_1,
+            eq_ty,
             eq_term_0_0, eq_term_0_1,
             eq_term_1_0, eq_term_1_1,
             elim,
@@ -655,7 +682,9 @@ impl<S: Scheme> RawStuck<S> {
         Weaken { usages, weak }
     }
 
-    pub(crate) fn sum_eq_lhs_injective(
+    pub(crate) fn sum_eq_name_injective(
+        mut lhs_name_0: RawName<S>,
+        mut lhs_name_1: RawName<S>,
         mut lhs_ty_0: RawTy<S>,
         mut lhs_ty_1: RawTy<S>,
         mut rhs_ty_0: RawTy<S>,
@@ -663,6 +692,33 @@ impl<S: Scheme> RawStuck<S> {
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut lhs_name_0.usages,
+            &mut lhs_name_1.usages,
+            &mut lhs_ty_0.usages,
+            &mut lhs_ty_1.usages,
+            &mut rhs_ty_0.usages,
+            &mut rhs_ty_1.usages,
+            &mut elim.usages,
+        ]);
+
+        let weak = Intern::new(RawStuckKind::SumEqNameInjective {
+            lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+        });
+        Weaken { usages, weak }
+    }
+
+    pub(crate) fn sum_eq_lhs_injective(
+        mut lhs_name_0: RawName<S>,
+        mut lhs_name_1: RawName<S>,
+        mut lhs_ty_0: RawTy<S>,
+        mut lhs_ty_1: RawTy<S>,
+        mut rhs_ty_0: RawTy<S>,
+        mut rhs_ty_1: RawTy<S>,
+        mut elim: RawStuck<S>,
+    ) -> RawStuck<S> {
+        let usages = Usages::merge_mut([
+            &mut lhs_name_0.usages,
+            &mut lhs_name_1.usages,
             &mut lhs_ty_0.usages,
             &mut lhs_ty_1.usages,
             &mut rhs_ty_0.usages,
@@ -671,12 +727,14 @@ impl<S: Scheme> RawStuck<S> {
         ]);
 
         let weak = Intern::new(RawStuckKind::SumEqLhsInjective {
-            lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+            lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
         });
         Weaken { usages, weak }
     }
 
     pub(crate) fn sum_eq_rhs_injective(
+        mut lhs_name_0: RawName<S>,
+        mut lhs_name_1: RawName<S>,
         mut lhs_ty_0: RawTy<S>,
         mut lhs_ty_1: RawTy<S>,
         mut rhs_ty_0: RawTy<S>,
@@ -684,6 +742,8 @@ impl<S: Scheme> RawStuck<S> {
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut lhs_name_0.usages,
+            &mut lhs_name_1.usages,
             &mut lhs_ty_0.usages,
             &mut lhs_ty_1.usages,
             &mut rhs_ty_0.usages,
@@ -692,75 +752,129 @@ impl<S: Scheme> RawStuck<S> {
         ]);
 
         let weak = Intern::new(RawStuckKind::SumEqRhsInjective {
-            lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+            lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
         });
         Weaken { usages, weak }
     }
 
-    pub(crate) fn sigma_eq_head_injective(
+    pub(crate) fn sigma_eq_name_injective(
+        mut head_name_0: RawName<S>,
+        mut head_name_1: RawName<S>,
         mut tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         mut tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut head_name_0.usages,
+            &mut head_name_1.usages,
+            &mut tail_ty_0.usages,
+            &mut tail_ty_1.usages,
+            &mut elim.usages,
+        ]);
+
+        let weak = Intern::new(RawStuckKind::SigmaEqNameInjective {
+            head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+        });
+        Weaken { usages, weak }
+    }
+
+    pub(crate) fn sigma_eq_head_injective(
+        mut head_name_0: RawName<S>,
+        mut head_name_1: RawName<S>,
+        mut tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
+        mut tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
+        mut elim: RawStuck<S>,
+    ) -> RawStuck<S> {
+        let usages = Usages::merge_mut([
+            &mut head_name_0.usages,
+            &mut head_name_1.usages,
             &mut tail_ty_0.usages,
             &mut tail_ty_1.usages,
             &mut elim.usages,
         ]);
 
         let weak = Intern::new(RawStuckKind::SigmaEqHeadInjective {
-            tail_ty_0, tail_ty_1, elim,
+            head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
         });
         Weaken { usages, weak }
     }
 
     pub(crate) fn sigma_eq_tail_injective(
+        mut head_name: RawName<S>,
         mut tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         mut tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut head_name.usages,
             &mut tail_ty_0.usages,
             &mut tail_ty_1.usages,
             &mut elim.usages,
         ]);
 
         let weak = Intern::new(RawStuckKind::SigmaEqTailInjective {
-            tail_ty_0, tail_ty_1, elim,
+            head_name, tail_ty_0, tail_ty_1, elim,
         });
         Weaken { usages, weak }
     }
 
-    pub(crate) fn pi_eq_arg_injective(
+    pub(crate) fn pi_eq_name_injective(
+        mut arg_name_0: RawName<S>,
+        mut arg_name_1: RawName<S>,
         mut res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         mut res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut arg_name_0.usages,
+            &mut arg_name_1.usages,
+            &mut res_ty_0.usages,
+            &mut res_ty_1.usages,
+            &mut elim.usages,
+        ]);
+
+        let weak = Intern::new(RawStuckKind::PiEqNameInjective {
+            arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+        });
+        Weaken { usages, weak }
+    }
+
+    pub(crate) fn pi_eq_arg_injective(
+        mut arg_name_0: RawName<S>,
+        mut arg_name_1: RawName<S>,
+        mut res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
+        mut res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
+        mut elim: RawStuck<S>,
+    ) -> RawStuck<S> {
+        let usages = Usages::merge_mut([
+            &mut arg_name_0.usages,
+            &mut arg_name_1.usages,
             &mut res_ty_0.usages,
             &mut res_ty_1.usages,
             &mut elim.usages,
         ]);
 
         let weak = Intern::new(RawStuckKind::PiEqArgInjective {
-            res_ty_0, res_ty_1, elim,
+            arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
         });
         Weaken { usages, weak }
     }
 
     pub(crate) fn pi_eq_res_injective(
+        mut arg_name: RawName<S>,
         mut res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         mut res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         mut elim: RawStuck<S>,
     ) -> RawStuck<S> {
         let usages = Usages::merge_mut([
+            &mut arg_name.usages,
             &mut res_ty_0.usages,
             &mut res_ty_1.usages,
             &mut elim.usages,
         ]);
 
         let weak = Intern::new(RawStuckKind::PiEqResInjective {
-            res_ty_0, res_ty_1, elim,
+            arg_name, res_ty_0, res_ty_1, elim,
         });
         Weaken { usages, weak }
     }
@@ -901,6 +1015,7 @@ impl<S: Scheme> RawStuck<S> {
             },
 
             RawStuckKind::Case {
+                lhs_name,
                 elim,
                 motive,
                 lhs_inhab,
@@ -910,6 +1025,7 @@ impl<S: Scheme> RawStuck<S> {
                     return false;
                 };
                 let RawStuckKind::Case {
+                    lhs_name: ty_lhs_name,
                     elim: ty_elim,
                     motive: ty_motive,
                     lhs_inhab: ty_lhs_inhab,
@@ -925,7 +1041,8 @@ impl<S: Scheme> RawStuck<S> {
                     ));
                 }
 
-                (
+                lhs_name == ty_lhs_name
+                && (
                     lhs_inhab.var_ty_unfiltered().unfilter(&self.usages)
                     ==
                     ty_lhs_inhab.var_ty_unfiltered().unfilter(&ty.usages)
@@ -971,19 +1088,20 @@ impl<S: Scheme> RawStuck<S> {
                 }
             },
 
-            RawStuckKind::StripTag { .. } |
             RawStuckKind::ProjHead { .. } |
             RawStuckKind::ProjTail { .. } |
             RawStuckKind::App { .. } |
-            RawStuckKind::TaggedEqTagInjective { .. } |
-            RawStuckKind::TaggedEqInnerInjective { .. } |
+            RawStuckKind::TagsApart { .. } |
             RawStuckKind::EqualEqEqTyInjective { .. } |
             RawStuckKind::EqualEqEqTerm0Injective { .. } |
             RawStuckKind::EqualEqEqTerm1Injective { .. } |
+            RawStuckKind::SumEqNameInjective { .. } |
             RawStuckKind::SumEqLhsInjective { .. } |
             RawStuckKind::SumEqRhsInjective { .. } |
+            RawStuckKind::SigmaEqNameInjective { .. } |
             RawStuckKind::SigmaEqHeadInjective { .. } |
             RawStuckKind::SigmaEqTailInjective { .. } |
+            RawStuckKind::PiEqNameInjective { .. } |
             RawStuckKind::PiEqArgInjective { .. } |
             RawStuckKind::PiEqResInjective { .. } => false,
         }
@@ -994,145 +1112,7 @@ impl<S: Scheme> RawStuckKind<S> {
     pub(crate) fn var() -> Intern<RawStuckKind<S>> {
         Intern::new(RawStuckKind::Var)
     }
-
-    /*
-    fn map_scheme<V: Scheme>(
-        &self,
-        map_user_ty: &mut impl FnMut(&S::UserTy) -> V::UserTy,
-        map_user_term: &mut impl FnMut(&S::UserTm) -> V::UserTm,
-    ) -> RawStuckKind<V> {
-        match self {
-            RawStuckKind::Var => RawStuckKind::Var,
-            RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                let motive = motive.map_scheme(map_user_ty, map_user_term);
-                let zero_inhab = zero_inhab.map_scheme(map_user_ty, map_user_term);
-                let succ_inhab = succ_inhab.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab }
-            },
-
-            RawStuckKind::Nat { nat } => {
-                let nat = nat.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::Nat { nat }
-            },
-            RawStuckKind::Cong { eq_term_0, eq_term_1, elim, motive, inhab } => {
-                let eq_term_0 = eq_term_0.map_scheme(map_user_ty, map_user_term);
-                let eq_term_1 = eq_term_1.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                let motive = motive.map_scheme(map_user_ty, map_user_term);
-                let inhab = inhab.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::Cong { eq_term_0, eq_term_1, elim, motive, inhab }
-            },
-            RawStuckKind::UniqueIdentity { eq_term, elim, motive, inhab } => {
-                let eq_term = eq_term.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                let motive = motive.map_scheme(map_user_ty, map_user_term);
-                let inhab = inhab.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::UniqueIdentity { eq_term, elim, motive, inhab }
-            },
-            RawStuckKind::Explode { elim, motive } => {
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                let motive = motive.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::Explode { elim, motive }
-            },
-            RawStuckKind::Case { elim, motive, lhs_inhab, rhs_inhab } => {
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                let motive = motive.map_scheme(map_user_ty, map_user_term);
-                let lhs_inhab = lhs_inhab.map_scheme(map_user_ty, map_user_term);
-                let rhs_inhab = rhs_inhab.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::Case { elim, motive, lhs_inhab, rhs_inhab }
-            },
-            RawStuckKind::ProjHead { tail_ty, elim } => {
-                let tail_ty = tail_ty.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::ProjHead { tail_ty, elim }
-            },
-            RawStuckKind::ProjTail { tail_ty, elim } => {
-                let tail_ty = tail_ty.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::ProjTail { tail_ty, elim }
-            },
-            RawStuckKind::App { res_ty, elim, arg_term } => {
-                let res_ty = res_ty.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                let arg_term = arg_term.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::App { res_ty, elim, arg_term }
-            },
-
-            RawStuckKind::SumEqLhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim } => {
-                let lhs_ty_0 = lhs_ty_0.map_scheme(map_user_ty, map_user_term);
-                let lhs_ty_1 = lhs_ty_1.map_scheme(map_user_ty, map_user_term);
-                let rhs_ty_0 = rhs_ty_0.map_scheme(map_user_ty, map_user_term);
-                let rhs_ty_1 = rhs_ty_1.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::SumEqLhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim }
-            },
-            RawStuckKind::SumEqRhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim } => {
-                let lhs_ty_0 = lhs_ty_0.map_scheme(map_user_ty, map_user_term);
-                let lhs_ty_1 = lhs_ty_1.map_scheme(map_user_ty, map_user_term);
-                let rhs_ty_0 = rhs_ty_0.map_scheme(map_user_ty, map_user_term);
-                let rhs_ty_1 = rhs_ty_1.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::SumEqRhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim }
-            },
-
-            RawStuckKind::SigmaEqHeadInjective { tail_ty_0, tail_ty_1, elim } => {
-                let tail_ty_0 = tail_ty_0.map_scheme(map_user_ty, map_user_term);
-                let tail_ty_1 = tail_ty_1.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::SigmaEqHeadInjective { tail_ty_0, tail_ty_1, elim }
-            },
-            RawStuckKind::SigmaEqTailInjective { tail_ty_0, tail_ty_1, elim } => {
-                let tail_ty_0 = tail_ty_0.map_scheme(map_user_ty, map_user_term);
-                let tail_ty_1 = tail_ty_1.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::SigmaEqTailInjective { tail_ty_0, tail_ty_1, elim }
-            },
-
-            RawStuckKind::PiEqArgInjective { res_ty_0, res_ty_1, elim } => {
-                let res_ty_0 = res_ty_0.map_scheme(map_user_ty, map_user_term);
-                let res_ty_1 = res_ty_1.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::PiEqArgInjective { res_ty_0, res_ty_1, elim }
-            },
-            RawStuckKind::PiEqResInjective { res_ty_0, res_ty_1, elim } => {
-                let res_ty_0 = res_ty_0.map_scheme(map_user_ty, map_user_term);
-                let res_ty_1 = res_ty_1.map_scheme(map_user_ty, map_user_term);
-                let elim = elim.map_scheme(map_user_ty, map_user_term);
-                RawStuckKind::PiEqResInjective { res_ty_0, res_ty_1, elim }
-            },
-
-        }
-    }
-    */
 }
-
-/*
-impl<S: Scheme> Substitute<S> for RawStuck<S> {
-    type RawSubstOutput = RawTm<S>;
-
-    fn to_subst_output(&self) -> RawTm<S> {
-        RawTm::stuck(self.clone())
-    }
-
-    fn subst(&self, filter: &Usages, var_term: &RawTm<S>) -> RawTm<S> {
-        match self.usages.subst(filter, var_term) {
-            ControlFlow::Break(usages) => {
-                let stuck = Weaken {
-                    usages,
-                    kind: self.kind.clone(),
-                };
-                RawTm::stuck(stuck)
-            },
-            ControlFlow::Continue((unfilter, sub_filter, var_term)) => {
-                let mut ret = self.kind.subst(&sub_filter, var_term);
-                ret.usages.unfilter(&unfilter);
-                ret
-            },
-        }
-    }
-}
-*/
 
 impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
     type RawSubstOutput = Intern<RawTmKind<S>>;
@@ -1146,17 +1126,13 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
     }
 
     fn subst(&self, filter: &Usages, var_term: RawTm<S>) -> RawTm<S> {
-        match self.get_clone() {
-            RawStuckKind::Var => {
-                let mut var_term = var_term;
-                var_term.weaken(filter.len().strict_sub(1).strict_sub(var_term.usages.len()));
-                var_term
-            },
+        if let Some(term) = S::interner().check_stuck_subst_cache(*self, filter, &var_term) {
+            return term;
+        }
 
-            RawStuckKind::StripTag { tag, untagged_ty, elim } => {
-                let untagged_ty = untagged_ty.subst(filter, &var_term);
-                let elim = elim.subst(filter, &var_term);
-                RawTm::strip_tag(tag, untagged_ty, elim)
+        let term = match self.get_clone() {
+            RawStuckKind::Var => {
+                var_term.clone_weaken(filter.len().strict_sub(1).strict_sub(var_term.usages.len()))
             },
 
             RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
@@ -1194,49 +1170,40 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
                 RawTm::explode(elim, motive)
             },
 
-            RawStuckKind::Case { elim, motive, lhs_inhab, rhs_inhab } => {
+            RawStuckKind::Case { lhs_name, elim, motive, lhs_inhab, rhs_inhab } => {
+                let lhs_name = lhs_name.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
                 let motive = motive.subst(filter, &var_term);
                 let lhs_inhab = lhs_inhab.subst(filter, &var_term);
                 let rhs_inhab = rhs_inhab.subst(filter, &var_term);
-                RawTm::case(elim, motive, lhs_inhab, rhs_inhab)
+                RawTm::case(lhs_name, elim, motive, lhs_inhab, rhs_inhab)
             },
 
-            RawStuckKind::ProjHead { tail_ty, elim } => {
+            RawStuckKind::ProjHead { head_name, tail_ty, elim } => {
+                let head_name = head_name.subst(filter, &var_term);
                 let tail_ty = tail_ty.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
-                RawTm::proj_head(tail_ty, elim)
+                RawTm::proj_head(head_name, tail_ty, elim)
             },
 
-            RawStuckKind::ProjTail { tail_ty, elim } => {
+            RawStuckKind::ProjTail { head_name, tail_ty, elim } => {
+                let head_name = head_name.subst(filter, &var_term);
                 let tail_ty = tail_ty.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
-                RawTm::proj_tail(tail_ty, elim)
+                RawTm::proj_tail(head_name, tail_ty, elim)
             },
 
-            RawStuckKind::App { res_ty, elim, arg_term } => {
+            RawStuckKind::App { arg_name, res_ty, elim, arg_term } => {
+                let arg_name = arg_name.subst(filter, &var_term);
                 let res_ty = res_ty.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
                 let arg_term = arg_term.subst(filter, &var_term);
-                RawTm::app(res_ty, elim, arg_term)
+                RawTm::app(arg_name, res_ty, elim, arg_term)
             },
 
-            RawStuckKind::TaggedEqTagInjective {
-                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-            } => {
-                let untagged_ty_0 = untagged_ty_0.subst(filter, &var_term);
-                let untagged_ty_1 = untagged_ty_1.subst(filter, &var_term);
+            RawStuckKind::TagsApart { tag_0, tag_1, elim } => {
                 let elim = elim.subst(filter, &var_term);
-                RawTm::tagged_eq_tag_injective(tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim)
-            },
-
-            RawStuckKind::TaggedEqInnerInjective {
-                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-            } => {
-                let untagged_ty_0 = untagged_ty_0.subst(filter, &var_term);
-                let untagged_ty_1 = untagged_ty_1.subst(filter, &var_term);
-                let elim = elim.subst(filter, &var_term);
-                RawTm::tagged_eq_inner_injective(tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim)
+                RawTm::tags_apart(tag_0, tag_1, elim)
             },
 
             RawStuckKind::EqualEqEqTyInjective {
@@ -1263,21 +1230,19 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
                 )
             },
             RawStuckKind::EqualEqEqTerm0Injective {
-                eq_ty_0, eq_ty_1,
+                eq_ty,
                 eq_term_0_0, eq_term_0_1,
                 eq_term_1_0, eq_term_1_1,
                 elim,
             } => {
-                let eq_ty_0 = eq_ty_0.subst(filter, &var_term);
-                let eq_ty_1 = eq_ty_1.subst(filter, &var_term);
+                let eq_ty = eq_ty.subst(filter, &var_term);
                 let eq_term_0_0 = eq_term_0_0.subst(filter, &var_term);
                 let eq_term_0_1 = eq_term_0_1.subst(filter, &var_term);
                 let eq_term_1_0 = eq_term_1_0.subst(filter, &var_term);
                 let eq_term_1_1 = eq_term_1_1.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
                 RawTm::equal_eq_eq_term_0_injective(
-                    eq_ty_0,
-                    eq_ty_1,
+                    eq_ty,
                     eq_term_0_0,
                     eq_term_0_1,
                     eq_term_1_0,
@@ -1286,21 +1251,19 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
                 )
             },
             RawStuckKind::EqualEqEqTerm1Injective {
-                eq_ty_0, eq_ty_1,
+                eq_ty,
                 eq_term_0_0, eq_term_0_1,
                 eq_term_1_0, eq_term_1_1,
                 elim,
             } => {
-                let eq_ty_0 = eq_ty_0.subst(filter, &var_term);
-                let eq_ty_1 = eq_ty_1.subst(filter, &var_term);
+                let eq_ty = eq_ty.subst(filter, &var_term);
                 let eq_term_0_0 = eq_term_0_0.subst(filter, &var_term);
                 let eq_term_0_1 = eq_term_0_1.subst(filter, &var_term);
                 let eq_term_1_0 = eq_term_1_0.subst(filter, &var_term);
                 let eq_term_1_1 = eq_term_1_1.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
                 RawTm::equal_eq_eq_term_1_injective(
-                    eq_ty_0,
-                    eq_ty_1,
+                    eq_ty,
                     eq_term_0_0,
                     eq_term_0_1,
                     eq_term_1_0,
@@ -1309,134 +1272,587 @@ impl<S: Scheme> Substitute<S> for Intern<RawStuckKind<S>> {
                 )
             },
 
-            RawStuckKind::SumEqLhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim } => {
+            RawStuckKind::SumEqNameInjective {
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+            } => {
+                let lhs_name_0 = lhs_name_0.subst(filter, &var_term);
+                let lhs_name_1 = lhs_name_1.subst(filter, &var_term);
                 let lhs_ty_0 = lhs_ty_0.subst(filter, &var_term);
                 let lhs_ty_1 = lhs_ty_1.subst(filter, &var_term);
                 let rhs_ty_0 = rhs_ty_0.subst(filter, &var_term);
                 let rhs_ty_1 = rhs_ty_1.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
-                RawTm::sum_eq_lhs_injective(lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim)
+                RawTm::sum_eq_name_injective(
+                    lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+                )
             },
 
-            RawStuckKind::SumEqRhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim } => {
+            RawStuckKind::SumEqLhsInjective {
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+            } => {
+                let lhs_name_0 = lhs_name_0.subst(filter, &var_term);
+                let lhs_name_1 = lhs_name_1.subst(filter, &var_term);
                 let lhs_ty_0 = lhs_ty_0.subst(filter, &var_term);
                 let lhs_ty_1 = lhs_ty_1.subst(filter, &var_term);
                 let rhs_ty_0 = rhs_ty_0.subst(filter, &var_term);
                 let rhs_ty_1 = rhs_ty_1.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
-                RawTm::sum_eq_rhs_injective(lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim)
+                RawTm::sum_eq_lhs_injective(
+                    lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+                )
             },
 
-            RawStuckKind::SigmaEqHeadInjective { tail_ty_0, tail_ty_1, elim } => {
+            RawStuckKind::SumEqRhsInjective {
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+            } => {
+                let lhs_name_0 = lhs_name_0.subst(filter, &var_term);
+                let lhs_name_1 = lhs_name_1.subst(filter, &var_term);
+                let lhs_ty_0 = lhs_ty_0.subst(filter, &var_term);
+                let lhs_ty_1 = lhs_ty_1.subst(filter, &var_term);
+                let rhs_ty_0 = rhs_ty_0.subst(filter, &var_term);
+                let rhs_ty_1 = rhs_ty_1.subst(filter, &var_term);
+                let elim = elim.subst(filter, &var_term);
+                RawTm::sum_eq_rhs_injective(
+                    lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+                )
+            },
+
+            RawStuckKind::SigmaEqNameInjective {
+                head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+            } => {
+                let head_name_0 = head_name_0.subst(filter, &var_term);
+                let head_name_1 = head_name_1.subst(filter, &var_term);
                 let tail_ty_0 = tail_ty_0.subst(filter, &var_term);
                 let tail_ty_1 = tail_ty_1.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
-                RawTm::sigma_eq_head_injective(tail_ty_0, tail_ty_1, elim)
+                RawTm::sigma_eq_name_injective(
+                    head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+                )
             },
 
-            RawStuckKind::SigmaEqTailInjective { tail_ty_0, tail_ty_1, elim } => {
+            RawStuckKind::SigmaEqHeadInjective {
+                head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+            } => {
+                let head_name_0 = head_name_0.subst(filter, &var_term);
+                let head_name_1 = head_name_1.subst(filter, &var_term);
                 let tail_ty_0 = tail_ty_0.subst(filter, &var_term);
                 let tail_ty_1 = tail_ty_1.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
-                RawTm::sigma_eq_tail_injective(tail_ty_0, tail_ty_1, elim)
+                RawTm::sigma_eq_head_injective(
+                    head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+                )
             },
 
-            RawStuckKind::PiEqArgInjective { res_ty_0, res_ty_1, elim } => {
+            RawStuckKind::SigmaEqTailInjective {
+                head_name,
+                tail_ty_0,
+                tail_ty_1,
+                elim,
+            } => {
+                let head_name = head_name.subst(filter, &var_term);
+                let tail_ty_0 = tail_ty_0.subst(filter, &var_term);
+                let tail_ty_1 = tail_ty_1.subst(filter, &var_term);
+                let elim = elim.subst(filter, &var_term);
+                RawTm::sigma_eq_tail_injective(
+                    head_name,
+                    tail_ty_0,
+                    tail_ty_1,
+                    elim,
+                )
+            },
+
+            RawStuckKind::PiEqNameInjective {
+                arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+            } => {
+                let arg_name_0 = arg_name_0.subst(filter, &var_term);
+                let arg_name_1 = arg_name_1.subst(filter, &var_term);
                 let res_ty_0 = res_ty_0.subst(filter, &var_term);
                 let res_ty_1 = res_ty_1.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
-                RawTm::pi_eq_arg_injective(res_ty_0, res_ty_1, elim)
+                RawTm::pi_eq_name_injective(
+                    arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+                )
             },
 
-            RawStuckKind::PiEqResInjective { res_ty_0, res_ty_1, elim } => {
+            RawStuckKind::PiEqArgInjective {
+                arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+            } => {
+                let arg_name_0 = arg_name_0.subst(filter, &var_term);
+                let arg_name_1 = arg_name_1.subst(filter, &var_term);
                 let res_ty_0 = res_ty_0.subst(filter, &var_term);
                 let res_ty_1 = res_ty_1.subst(filter, &var_term);
                 let elim = elim.subst(filter, &var_term);
-                RawTm::pi_eq_res_injective(res_ty_0, res_ty_1, elim)
+                RawTm::pi_eq_arg_injective(
+                    arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+                )
             },
-        }
+
+            RawStuckKind::PiEqResInjective {
+                arg_name,
+                res_ty_0,
+                res_ty_1,
+                elim,
+            } => {
+                let arg_name = arg_name.subst(filter, &var_term);
+                let res_ty_0 = res_ty_0.subst(filter, &var_term);
+                let res_ty_1 = res_ty_1.subst(filter, &var_term);
+                let elim = elim.subst(filter, &var_term);
+                RawTm::pi_eq_res_injective(
+                    arg_name,
+                    res_ty_0,
+                    res_ty_1,
+                    elim,
+                )
+            },
+        };
+
+        S::interner().insert_stuck_subst_cache(*self, filter.clone(), var_term, term.clone());
+        term
     }
 
     fn eliminates_var(&self, index: usize) -> bool {
         match self.get_clone() {
             RawStuckKind::Var => false,
-            RawStuckKind::StripTag { tag: _, untagged_ty, elim } => {
-                untagged_ty.eliminates_var(index) ||
-                elim.eliminates_var(index)
-            },
-            RawStuckKind::ForLoop { elim, motive: _, zero_inhab, succ_inhab } => {
+            RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
                 elim.as_var().map_or(false, |var_index| var_index == index) ||
+                motive.eliminates_var(index) ||
                 elim.eliminates_var(index) ||
                 zero_inhab.eliminates_var(index) ||
                 succ_inhab.eliminates_var(index)
             },
             RawStuckKind::Nat { nat } => nat.eliminates_var(index),
-            RawStuckKind::Cong { eq_term_0: _, eq_term_1: _, elim, motive: _, inhab } => {
+            RawStuckKind::Cong { eq_term_0, eq_term_1, elim, motive, inhab } => {
                 elim.as_var().map_or(false, |var_index| var_index == index) ||
+                eq_term_0.eliminates_var(index) ||
+                eq_term_1.eliminates_var(index) ||
                 elim.eliminates_var(index) ||
+                motive.eliminates_var(index) ||
                 inhab.eliminates_var(index)
             },
-            RawStuckKind::UniqueIdentity { eq_term: _, elim, motive: _, inhab } => {
+            RawStuckKind::UniqueIdentity { eq_term, elim, motive, inhab } => {
                 elim.as_var().map_or(false, |var_index| var_index == index) ||
+                eq_term.eliminates_var(index) ||
                 elim.eliminates_var(index) ||
+                motive.eliminates_var(index) ||
                 inhab.eliminates_var(index)
             },
-            RawStuckKind::Explode { elim, motive: _ } => {
-                elim.as_var().map_or(false, |var_index| var_index == index) ||
-                elim.eliminates_var(index)
-            },
-            RawStuckKind::Case { elim, motive: _, lhs_inhab, rhs_inhab } => {
+            RawStuckKind::Explode { elim, motive } => {
                 elim.as_var().map_or(false, |var_index| var_index == index) ||
                 elim.eliminates_var(index) ||
+                motive.eliminates_var(index)
+            },
+            RawStuckKind::Case { lhs_name, elim, motive, lhs_inhab, rhs_inhab } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                lhs_name.eliminates_var(index) ||
+                elim.eliminates_var(index) ||
+                motive.eliminates_var(index) ||
                 lhs_inhab.eliminates_var(index) ||
                 rhs_inhab.eliminates_var(index)
             },
-            RawStuckKind::ProjHead { tail_ty: _, elim } => {
+            RawStuckKind::ProjHead { head_name, tail_ty, elim } => {
                 elim.as_var().map_or(false, |var_index| var_index == index) ||
+                head_name.eliminates_var(index) ||
+                tail_ty.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::ProjTail { tail_ty: _, elim } => {
+            RawStuckKind::ProjTail { head_name, tail_ty, elim } => {
                 elim.as_var().map_or(false, |var_index| var_index == index) ||
+                head_name.eliminates_var(index) ||
+                tail_ty.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::App { res_ty: _, elim, arg_term } => {
+            RawStuckKind::App { arg_name, res_ty, elim, arg_term } => {
                 elim.as_var().map_or(false, |var_index| var_index == index) ||
+                arg_name.eliminates_var(index) ||
+                res_ty.eliminates_var(index) ||
                 elim.eliminates_var(index) ||
                 arg_term.eliminates_var(index)
             },
 
-            RawStuckKind::TaggedEqTagInjective { elim, .. } => {
+            RawStuckKind::TagsApart { elim, .. } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::TaggedEqInnerInjective { elim, .. } => {
+
+            RawStuckKind::EqualEqEqTyInjective {
+                eq_ty_0, eq_ty_1,
+                eq_term_0_0, eq_term_0_1,
+                eq_term_1_0, eq_term_1_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                eq_ty_0.eliminates_var(index) ||
+                eq_ty_1.eliminates_var(index) ||
+                eq_term_0_0.eliminates_var(index) ||
+                eq_term_0_1.eliminates_var(index) ||
+                eq_term_1_0.eliminates_var(index) ||
+                eq_term_1_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::EqualEqEqTyInjective { elim, .. } => {
+            RawStuckKind::EqualEqEqTerm0Injective {
+                eq_ty,
+                eq_term_0_0, eq_term_0_1,
+                eq_term_1_0, eq_term_1_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                eq_ty.eliminates_var(index) ||
+                eq_term_0_0.eliminates_var(index) ||
+                eq_term_0_1.eliminates_var(index) ||
+                eq_term_1_0.eliminates_var(index) ||
+                eq_term_1_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::EqualEqEqTerm0Injective { elim, .. } => {
+            RawStuckKind::EqualEqEqTerm1Injective {
+                eq_ty,
+                eq_term_0_0, eq_term_0_1,
+                eq_term_1_0, eq_term_1_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                eq_ty.eliminates_var(index) ||
+                eq_term_0_0.eliminates_var(index) ||
+                eq_term_0_1.eliminates_var(index) ||
+                eq_term_1_0.eliminates_var(index) ||
+                eq_term_1_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::EqualEqEqTerm1Injective { elim, .. } => {
+
+            RawStuckKind::SumEqNameInjective {
+                lhs_name_0, lhs_name_1,
+                lhs_ty_0, lhs_ty_1,
+                rhs_ty_0, rhs_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                lhs_name_0.eliminates_var(index) ||
+                lhs_name_1.eliminates_var(index) ||
+                lhs_ty_0.eliminates_var(index) ||
+                lhs_ty_1.eliminates_var(index) ||
+                rhs_ty_0.eliminates_var(index) ||
+                rhs_ty_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::SumEqLhsInjective { elim, .. } => {
+
+            RawStuckKind::SumEqLhsInjective {
+                lhs_name_0, lhs_name_1,
+                lhs_ty_0, lhs_ty_1,
+                rhs_ty_0, rhs_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                lhs_name_0.eliminates_var(index) ||
+                lhs_name_1.eliminates_var(index) ||
+                lhs_ty_0.eliminates_var(index) ||
+                lhs_ty_1.eliminates_var(index) ||
+                rhs_ty_0.eliminates_var(index) ||
+                rhs_ty_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::SumEqRhsInjective { elim, .. } => {
+
+            RawStuckKind::SumEqRhsInjective {
+                lhs_name_0, lhs_name_1,
+                lhs_ty_0, lhs_ty_1,
+                rhs_ty_0, rhs_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                lhs_name_0.eliminates_var(index) ||
+                lhs_name_1.eliminates_var(index) ||
+                lhs_ty_0.eliminates_var(index) ||
+                lhs_ty_1.eliminates_var(index) ||
+                rhs_ty_0.eliminates_var(index) ||
+                rhs_ty_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::SigmaEqHeadInjective { elim, .. } => {
+
+            RawStuckKind::SigmaEqNameInjective {
+                head_name_0, head_name_1,
+                tail_ty_0, tail_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                head_name_0.eliminates_var(index) ||
+                head_name_1.eliminates_var(index) ||
+                tail_ty_0.eliminates_var(index) ||
+                tail_ty_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::SigmaEqTailInjective { elim, .. } => {
+
+            RawStuckKind::SigmaEqHeadInjective {
+                head_name_0, head_name_1,
+                tail_ty_0, tail_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                head_name_0.eliminates_var(index) ||
+                head_name_1.eliminates_var(index) ||
+                tail_ty_0.eliminates_var(index) ||
+                tail_ty_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::PiEqArgInjective { elim, .. } => {
+
+            RawStuckKind::SigmaEqTailInjective {
+                head_name,
+                tail_ty_0, tail_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                head_name.eliminates_var(index) ||
+                tail_ty_0.eliminates_var(index) ||
+                tail_ty_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
             },
-            RawStuckKind::PiEqResInjective { elim, .. } => {
+
+            RawStuckKind::PiEqNameInjective {
+                arg_name_0, arg_name_1,
+                res_ty_0, res_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                arg_name_0.eliminates_var(index) ||
+                arg_name_1.eliminates_var(index) ||
+                res_ty_0.eliminates_var(index) ||
+                res_ty_1.eliminates_var(index) ||
                 elim.eliminates_var(index)
+            },
+
+            RawStuckKind::PiEqArgInjective {
+                arg_name_0, arg_name_1,
+                res_ty_0, res_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                arg_name_0.eliminates_var(index) ||
+                arg_name_1.eliminates_var(index) ||
+                res_ty_0.eliminates_var(index) ||
+                res_ty_1.eliminates_var(index) ||
+                elim.eliminates_var(index)
+            },
+
+            RawStuckKind::PiEqResInjective {
+                arg_name,
+                res_ty_0, res_ty_1,
+                elim,
+            } => {
+                elim.as_var().map_or(false, |var_index| var_index == index) ||
+                arg_name.eliminates_var(index) ||
+                res_ty_0.eliminates_var(index) ||
+                res_ty_1.eliminates_var(index) ||
+                elim.eliminates_var(index)
+            },
+        }
+    }
+
+    fn contains_subterm(&self, subterm: RawTm<S>) -> bool {
+        match self.get_clone() {
+            RawStuckKind::Var => false,
+            RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
+                motive.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm) ||
+                zero_inhab.contains_subterm(&subterm) ||
+                succ_inhab.contains_subterm(&subterm)
+            },
+            RawStuckKind::Nat { nat } => nat.contains_subterm(&subterm),
+            RawStuckKind::Cong { eq_term_0, eq_term_1, elim, motive, inhab } => {
+                eq_term_0.contains_subterm(&subterm) ||
+                eq_term_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm) ||
+                motive.contains_subterm(&subterm) ||
+                inhab.contains_subterm(&subterm)
+            },
+            RawStuckKind::UniqueIdentity { eq_term, elim, motive, inhab } => {
+                eq_term.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm) ||
+                motive.contains_subterm(&subterm) ||
+                inhab.contains_subterm(&subterm)
+            },
+            RawStuckKind::Explode { elim, motive } => {
+                elim.contains_subterm(&subterm) ||
+                motive.contains_subterm(&subterm)
+            },
+            RawStuckKind::Case { lhs_name, elim, motive, lhs_inhab, rhs_inhab } => {
+                lhs_name.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm) ||
+                motive.contains_subterm(&subterm) ||
+                lhs_inhab.contains_subterm(&subterm) ||
+                rhs_inhab.contains_subterm(&subterm)
+            },
+            RawStuckKind::ProjHead { head_name, tail_ty, elim } => {
+                head_name.contains_subterm(&subterm) ||
+                tail_ty.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+            RawStuckKind::ProjTail { head_name, tail_ty, elim } => {
+                head_name.contains_subterm(&subterm) ||
+                tail_ty.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+            RawStuckKind::App { arg_name, res_ty, elim, arg_term } => {
+                arg_name.contains_subterm(&subterm) ||
+                res_ty.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm) ||
+                arg_term.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::TagsApart { elim, .. } => {
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::EqualEqEqTyInjective {
+                eq_ty_0, eq_ty_1,
+                eq_term_0_0, eq_term_0_1,
+                eq_term_1_0, eq_term_1_1,
+                elim,
+            } => {
+                eq_ty_0.contains_subterm(&subterm) ||
+                eq_ty_1.contains_subterm(&subterm) ||
+                eq_term_0_0.contains_subterm(&subterm) ||
+                eq_term_0_1.contains_subterm(&subterm) ||
+                eq_term_1_0.contains_subterm(&subterm) ||
+                eq_term_1_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+            RawStuckKind::EqualEqEqTerm0Injective {
+                eq_ty,
+                eq_term_0_0, eq_term_0_1,
+                eq_term_1_0, eq_term_1_1,
+                elim,
+            } => {
+                eq_ty.contains_subterm(&subterm) ||
+                eq_term_0_0.contains_subterm(&subterm) ||
+                eq_term_0_1.contains_subterm(&subterm) ||
+                eq_term_1_0.contains_subterm(&subterm) ||
+                eq_term_1_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+            RawStuckKind::EqualEqEqTerm1Injective {
+                eq_ty,
+                eq_term_0_0, eq_term_0_1,
+                eq_term_1_0, eq_term_1_1,
+                elim,
+            } => {
+                eq_ty.contains_subterm(&subterm) ||
+                eq_term_0_0.contains_subterm(&subterm) ||
+                eq_term_0_1.contains_subterm(&subterm) ||
+                eq_term_1_0.contains_subterm(&subterm) ||
+                eq_term_1_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::SumEqNameInjective {
+                lhs_name_0, lhs_name_1,
+                lhs_ty_0, lhs_ty_1,
+                rhs_ty_0, rhs_ty_1,
+                elim,
+            } => {
+                lhs_name_0.contains_subterm(&subterm) ||
+                lhs_name_1.contains_subterm(&subterm) ||
+                lhs_ty_0.contains_subterm(&subterm) ||
+                lhs_ty_1.contains_subterm(&subterm) ||
+                rhs_ty_0.contains_subterm(&subterm) ||
+                rhs_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::SumEqLhsInjective {
+                lhs_name_0, lhs_name_1,
+                lhs_ty_0, lhs_ty_1,
+                rhs_ty_0, rhs_ty_1,
+                elim,
+            } => {
+                lhs_name_0.contains_subterm(&subterm) ||
+                lhs_name_1.contains_subterm(&subterm) ||
+                lhs_ty_0.contains_subterm(&subterm) ||
+                lhs_ty_1.contains_subterm(&subterm) ||
+                rhs_ty_0.contains_subterm(&subterm) ||
+                rhs_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::SumEqRhsInjective {
+                lhs_name_0, lhs_name_1,
+                lhs_ty_0, lhs_ty_1,
+                rhs_ty_0, rhs_ty_1,
+                elim,
+            } => {
+                lhs_name_0.contains_subterm(&subterm) ||
+                lhs_name_1.contains_subterm(&subterm) ||
+                lhs_ty_0.contains_subterm(&subterm) ||
+                lhs_ty_1.contains_subterm(&subterm) ||
+                rhs_ty_0.contains_subterm(&subterm) ||
+                rhs_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::SigmaEqNameInjective {
+                head_name_0, head_name_1,
+                tail_ty_0, tail_ty_1,
+                elim,
+            } => {
+                head_name_0.contains_subterm(&subterm) ||
+                head_name_1.contains_subterm(&subterm) ||
+                tail_ty_0.contains_subterm(&subterm) ||
+                tail_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::SigmaEqHeadInjective {
+                head_name_0, head_name_1,
+                tail_ty_0, tail_ty_1,
+                elim,
+            } => {
+                head_name_0.contains_subterm(&subterm) ||
+                head_name_1.contains_subterm(&subterm) ||
+                tail_ty_0.contains_subterm(&subterm) ||
+                tail_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::SigmaEqTailInjective {
+                head_name,
+                tail_ty_0, tail_ty_1,
+                elim,
+            } => {
+                head_name.contains_subterm(&subterm) ||
+                tail_ty_0.contains_subterm(&subterm) ||
+                tail_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::PiEqNameInjective {
+                arg_name_0, arg_name_1,
+                res_ty_0, res_ty_1,
+                elim,
+            } => {
+                arg_name_0.contains_subterm(&subterm) ||
+                arg_name_1.contains_subterm(&subterm) ||
+                res_ty_0.contains_subterm(&subterm) ||
+                res_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::PiEqArgInjective {
+                arg_name_0, arg_name_1,
+                res_ty_0, res_ty_1,
+                elim,
+            } => {
+                arg_name_0.contains_subterm(&subterm) ||
+                arg_name_1.contains_subterm(&subterm) ||
+                res_ty_0.contains_subterm(&subterm) ||
+                res_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
+            },
+
+            RawStuckKind::PiEqResInjective {
+                arg_name,
+                res_ty_0, res_ty_1,
+                elim,
+            } => {
+                arg_name.contains_subterm(&subterm) ||
+                res_ty_0.contains_subterm(&subterm) ||
+                res_ty_1.contains_subterm(&subterm) ||
+                elim.contains_subterm(&subterm)
             },
         }
     }

@@ -93,6 +93,7 @@ impl<S: Scheme> RawCtx<S> {
         }
     }
 
+    /*
     pub fn to_sigma(&self, ty: RawTy<S>) -> RawTy<S> {
         match self.cons_opt.as_ref() {
             None => ty,
@@ -104,7 +105,9 @@ impl<S: Scheme> RawCtx<S> {
             },
         }
     }
+    */
 
+    /*
     pub fn to_sigma_scope<T>(&self, scope: RawScope<S, T>) -> RawScope<S, T>
     where
         T: Substitute<S, RawSubstOutput = T>,
@@ -115,12 +118,15 @@ impl<S: Scheme> RawCtx<S> {
             Some(cons) => {
                 let RawCtxCons { parent, var_ty } = &**cons;
                 let ctx_len = var_ty.usages.len();
-                let mut tail_ty = RawScope::new(var_ty.clone(), scope.unfilter_out(|scope| scope.var_ty.clone()));
+                let mut tail_ty = RawScope::new(
+                    var_ty.clone(),
+                    scope.unfilter_out(|scope| scope.var_ty.clone()),
+                );
                 let sigma_ty = RawTy::sigma(tail_ty.clone());
 
                 let mut scope = RawScope::new(var_ty.clone(), scope);
-                scope.weaken(1);
-                tail_ty.weaken(1);
+                let scope = scope.move_weaken(1);
+                let tail_ty = tail_ty.move_weaken(1);
                 let var_term = RawTm::var(ctx_len + 1, ctx_len, &sigma_ty);
                 let inner = {
                     scope
@@ -132,6 +138,7 @@ impl<S: Scheme> RawCtx<S> {
             },
         }
     }
+    */
 
     pub fn fill_transitive_usages(&self, usages: &mut Usages) {
         match self.cons_opt.as_ref() {
@@ -145,32 +152,5 @@ impl<S: Scheme> RawCtx<S> {
             },
         }
     }
-
-    /*
-    pub fn map_scheme<V: Scheme>(
-        &self,
-        map_user_ty: &mut impl FnMut(&S::UserTy) -> V::UserTy,
-        map_user_term: &mut impl FnMut(&S::UserTm) -> V::UserTm,
-    ) -> RawCtx<V> {
-        RawCtx {
-            cons_opt: self.cons_opt.as_ref().map(|cons| Arc::new(cons.map_scheme(map_user_ty, map_user_term))),
-        }
-    }
-    */
-}
-
-impl<S: Scheme> RawCtxCons<S> {
-    /*
-    pub fn map_scheme<V: Scheme>(
-        &self,
-        map_user_ty: &mut impl FnMut(&S::UserTy) -> V::UserTy,
-        map_user_term: &mut impl FnMut(&S::UserTm) -> V::UserTm,
-    ) -> RawCtxCons<V> {
-        let RawCtxCons { parent, var_ty } = self;
-        let parent = parent.map_scheme(map_user_ty, map_user_term);
-        let var_ty = var_ty.map_scheme(map_user_ty, map_user_term);
-        RawCtxCons { parent, var_ty }
-    }
-    */
 }
 

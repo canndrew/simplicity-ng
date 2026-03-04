@@ -141,6 +141,33 @@ impl<S: Scheme> fmt::Debug for Stuck<S> {
     }
 }
 
+impl<S: Scheme> fmt::Debug for Name<S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Name {{")?;
+        indent(f, |f| {
+            newline(f)?;
+            if f.alternate() {
+                write!(f, "ctx: ")?;
+                pprint_raw_ctx(&self.raw_ctx, f)?;
+                write!(f, ",")?;
+                newline(f)?;
+            }
+            write!(f, "raw_name: ")?;
+            pprint_raw_name(
+                &self.raw_ctx,
+                Usages::ones(self.raw_name.usages.len()),
+                &self.raw_name,
+                f,
+            )?;
+            write!(f, ",")?;
+            Ok(())
+        })?;
+        newline(f)?;
+        write!(f, "}}")?;
+        Ok(())
+    }
+}
+
 impl<S: Scheme, T: Contextual<S> + fmt::Debug> fmt::Debug for Scope<S, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Scope {{")?;
@@ -174,7 +201,9 @@ impl<S: Scheme, T: Contextual<S> + fmt::Debug> fmt::Debug for Scope<S, T> {
     }
 }
 
-fn pprint_raw_ctx_inner<S: Scheme>(raw_ctx: &RawCtx<S>, f: &mut fmt::Formatter) -> Result<usize, fmt::Error> {
+fn pprint_raw_ctx_inner<S: Scheme>(
+    raw_ctx: &RawCtx<S>, f: &mut fmt::Formatter,
+) -> Result<usize, fmt::Error> {
     match &raw_ctx.cons_opt {
         None => Ok(0),
         Some(cons) => {
@@ -233,6 +262,16 @@ fn pprint_raw_stuck<S: Scheme>(
     pprint_raw_stuck_kind(raw_ctx, filter, raw_stuck.weak, f)
 }
 
+fn pprint_raw_name<S: Scheme>(
+    raw_ctx: &RawCtx<S>,
+    mut filter: Usages,
+    raw_name: &RawName<S>,
+    f: &mut fmt::Formatter,
+) -> fmt::Result {
+    filter.zero_unused(&raw_name.usages);
+    pprint_raw_name_kind(raw_ctx, filter, &raw_name.weak, f)
+}
+
 fn pprint_raw_ty_kind<S: Scheme>(
     raw_ctx: &RawCtx<S>,
     filter: Usages,
@@ -245,9 +284,8 @@ fn pprint_raw_ty_kind<S: Scheme>(
                 stuck = pprint_raw_stuck(raw_ctx, filter, &stuck, f),
             ])
         },
-        RawTyKind::Tagged { tag, inner_ty } => {
-            write!(f, "@{:?} ", tag)?;
-            pprint_raw_ty_kind(raw_ctx, filter, inner_ty, f)?;
+        RawTyKind::Name => {
+            args!(f, "name", []);
         },
         RawTyKind::Universe => {
             args!(f, "universe", []);
@@ -268,14 +306,16 @@ fn pprint_raw_ty_kind<S: Scheme>(
         RawTyKind::Unit => {
             args!(f, "unit", []);
         },
-        RawTyKind::Sum { lhs_ty, rhs_ty } => {
+        RawTyKind::Sum { lhs_name, lhs_ty, rhs_ty } => {
             args!(f, "sum", [
+                lhs_name = pprint_raw_name(raw_ctx, filter.clone(), &lhs_name, f),
                 lhs_ty = pprint_raw_ty(raw_ctx, filter.clone(), &lhs_ty, f),
                 rhs_ty = pprint_raw_ty(raw_ctx, filter, &rhs_ty, f),
             ]);
         },
-        RawTyKind::Sigma { tail_ty } => {
+        RawTyKind::Sigma { head_name, tail_ty } => {
             args!(f, "sigma", [
+                head_name = pprint_raw_name(raw_ctx, filter.clone(), &head_name, f),
                 tail_ty = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -287,8 +327,9 @@ fn pprint_raw_ty_kind<S: Scheme>(
                 ),
             ]);
         },
-        RawTyKind::Pi { res_ty } => {
+        RawTyKind::Pi { arg_name, res_ty } => {
             args!(f, "pi", [
+                arg_name = pprint_raw_name(raw_ctx, filter.clone(), &arg_name, f),
                 res_ty = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -318,13 +359,8 @@ fn pprint_raw_term_kind<S: Scheme>(
                 stuck = pprint_raw_stuck(raw_ctx, term_filter, &stuck, f),
             ]);
         },
-        RawTmKind::Tagged { tag, inner_term } => {
-            let RawTyKind::Tagged { tag: ty_tag, inner_ty } = raw_ty_kind.get_clone() else {
-                unreachable!();
-            };
-            debug_assert_eq!(tag, ty_tag);
-            write!(f, "@{:?} ", tag)?;
-            pprint_raw_term_kind(raw_ctx, ty_filter, inner_ty, term_filter, inner_term, f)?;
+        RawTmKind::Tag { tag } => {
+            write!(f, "tag({:?})", tag)?;
         },
         RawTmKind::Type { ty } => {
             debug_assert!(ty_filter.is_zeros());
@@ -359,7 +395,7 @@ fn pprint_raw_term_kind<S: Scheme>(
             args!(f, "unit", []);
         },
         RawTmKind::InjLhs { lhs_term } => {
-            let RawTyKind::Sum { lhs_ty, rhs_ty: _ } = raw_ty_kind.get_clone() else {
+            let RawTyKind::Sum { lhs_name: _, lhs_ty, rhs_ty: _ } = raw_ty_kind.get_clone() else {
                 unreachable!();
             };
             args!(f, "inj_lhs", [
@@ -367,17 +403,23 @@ fn pprint_raw_term_kind<S: Scheme>(
             ]);
         },
         RawTmKind::InjRhs { rhs_term } => {
-            let RawTyKind::Sum { lhs_ty: _, rhs_ty } = raw_ty_kind.get_clone() else {
+            let RawTyKind::Sum { lhs_name: _, lhs_ty: _, rhs_ty } = raw_ty_kind.get_clone() else {
                 unreachable!();
             };
             args!(f, "inj_rhs", [
                 rhs_term = pprint_raw_term(raw_ctx, ty_filter, &rhs_ty, term_filter, &rhs_term, f),
             ]);
         },
-        RawTmKind::Pair { head_term, tail_term } => {
-            let RawTyKind::Sigma { tail_ty } = raw_ty_kind.get_clone() else {
+        RawTmKind::Pair { head_name, head_term, tail_term } => {
+            let RawTyKind::Sigma {
+                head_name: ty_head_name, tail_ty,
+            } = raw_ty_kind.get_clone() else {
                 unreachable!();
             };
+            debug_assert_eq!(
+                head_name.clone_unfilter(&term_filter),
+                ty_head_name.unfilter(&ty_filter),
+            );
             let head_ty = &tail_ty.weak.var_ty;
             let head_ty_filter = {
                 let mut head_ty_filter = ty_filter.clone();
@@ -391,15 +433,21 @@ fn pprint_raw_term_kind<S: Scheme>(
             };
             let (tail_ty_filter, tail_ty) = tail_ty.filter_self();
             args!(f, "pair", [
+                head_name = pprint_raw_name(raw_ctx, term_filter.clone(), &head_name, f),
                 head_term = pprint_raw_term(raw_ctx, head_ty_filter, head_ty, term_filter.clone(), &head_term, f),
                 tail_term = pprint_raw_term(raw_ctx, tail_ty_filter, &tail_ty, term_filter, &tail_term, f),
             ]);
         },
-        RawTmKind::Func { res_term } => {
-            let RawTyKind::Pi { res_ty } = raw_ty_kind.get_clone() else {
+        RawTmKind::Func { arg_name, res_term } => {
+            let RawTyKind::Pi { arg_name: ty_arg_name, res_ty } = raw_ty_kind.get_clone() else {
                 unreachable!();
             };
+            debug_assert_eq!(
+                arg_name.clone_unfilter(&term_filter),
+                ty_arg_name.unfilter(&ty_filter),
+            );
             args!(f, "func", [
+                arg_name = pprint_raw_name(raw_ctx, term_filter.clone(), &arg_name, f),
                 res_term = pprint_raw_scope(
                     raw_ctx,
                     term_filter,
@@ -428,11 +476,6 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             let index = filter.index_of_single_one().unwrap();
             write!(f, "var({})", index)?;
         },
-
-        RawStuckKind::StripTag { tag, untagged_ty: _, elim } => {
-            write!(f, "@{:?} ", tag)?;
-            pprint_raw_stuck(raw_ctx, filter, &elim, f)?;
-        }
 
         RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
             args!(f, "for_loop", [
@@ -465,9 +508,9 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                             succ_inhab,
                             |raw_ctx, inner_filter, succ_inhab, f| {
                                 let succ_inhab_ty = {
-                                    let mut succ_inhab_ty = motive.clone();
-                                    succ_inhab_ty.weaken(2);
-                                    succ_inhab_ty.bind(
+                                    motive
+                                    .clone_weaken(2)
+                                    .bind(
                                         &RawTm::succs(
                                             NonZeroBigUint::one(),
                                             RawTm::var(
@@ -566,9 +609,8 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                             &motive.weak.var_ty.clone_unfilter(&motive.usages),
                         );
                         let inhab_ty = {
-                            let mut inhab_ty = motive.clone();
-                            inhab_ty.weaken(1);
-                            inhab_ty
+                            motive
+                            .clone_weaken(1)
                             .bind(&var_term)
                             .bind(&var_term)
                             .bind(&RawTm::refl(motive.usages.len() + 1))
@@ -620,9 +662,8 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                             &motive.weak.var_ty.clone_unfilter(&motive.usages),
                         );
                         let inhab_ty = {
-                            let mut inhab_ty = motive.clone();
-                            inhab_ty.weaken(1);
-                            inhab_ty
+                            motive
+                            .clone_weaken(1)
                             .bind(&var_term)
                             .bind(&RawTm::refl(motive.usages.len() + 1))
                         };
@@ -650,10 +691,11 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ]);
         },
 
-        RawStuckKind::Case { elim, motive, lhs_inhab, rhs_inhab } => {
+        RawStuckKind::Case { lhs_name, elim, motive, lhs_inhab, rhs_inhab } => {
             let lhs_ty = lhs_inhab.weak.var_ty.clone_unfilter(&lhs_inhab.usages);
             let rhs_ty = rhs_inhab.weak.var_ty.clone_unfilter(&rhs_inhab.usages);
             args!(f, "case", [
+                lhs_name = pprint_raw_name(raw_ctx, filter.clone(), &lhs_name, f),
                 elim = pprint_raw_stuck(raw_ctx, filter.clone(), &elim, f),
                 motive = pprint_raw_scope(
                     raw_ctx,
@@ -670,9 +712,9 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                     &lhs_inhab,
                     |raw_ctx, inner_filter, lhs_inhab, f| {
                         let inhab_ty = {
-                            let mut inhab_ty = motive.clone();
-                            inhab_ty.weaken(1);
-                            inhab_ty.bind(
+                            motive
+                            .clone_weaken(1)
+                            .bind(
                                 &RawTm::inj_lhs(RawTm::var(
                                     motive.usages.len() + 1,
                                     motive.usages.len(),
@@ -692,9 +734,9 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                     &rhs_inhab,
                     |raw_ctx, inner_filter, rhs_inhab, f| {
                         let inhab_ty = {
-                            let mut inhab_ty = motive.clone();
-                            inhab_ty.weaken(1);
-                            inhab_ty.bind(
+                            motive
+                            .clone_weaken(1)
+                            .bind(
                                 &RawTm::inj_rhs(RawTm::var(
                                     motive.usages.len() + 1,
                                     motive.usages.len(),
@@ -711,8 +753,9 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ]);
         },
 
-        RawStuckKind::ProjHead { tail_ty, elim } => {
+        RawStuckKind::ProjHead { head_name, tail_ty, elim } => {
             args!(f, "proj_head", [
+                head_name = pprint_raw_name(raw_ctx, filter.clone(), &head_name, f),
                 tail_ty = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -726,8 +769,9 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ]);
         },
 
-        RawStuckKind::ProjTail { tail_ty, elim } => {
+        RawStuckKind::ProjTail { head_name, tail_ty, elim } => {
             args!(f, "proj_tail", [
+                head_name = pprint_raw_name(raw_ctx, filter.clone(), &head_name, f),
                 tail_ty = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -741,7 +785,7 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ]);
         },
 
-        RawStuckKind::App { res_ty, elim, arg_term } => {
+        RawStuckKind::App { arg_name, res_ty, elim, arg_term } => {
             let arg_ty = &res_ty.weak.var_ty;
             let arg_ty_filter = {
                 let mut arg_ty_filter = filter.clone();
@@ -749,6 +793,7 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                 arg_ty_filter
             };
             args!(f, "app", [
+                arg_name = pprint_raw_name(raw_ctx, filter.clone(), &arg_name, f),
                 res_ty = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -763,26 +808,10 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ]);
         },
 
-        RawStuckKind::TaggedEqTagInjective {
-            tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-        } => {
-            args!(f, "tagged_eq_tag_injective", [
+        RawStuckKind::TagsApart { tag_0, tag_1, elim } => {
+            args!(f, "tags_apart", [
                 tag_0 = write!(f, "{:?}", tag_0),
                 tag_1 = write!(f, "{:?}", tag_1),
-                untagged_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &untagged_ty_0, f),
-                untagged_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &untagged_ty_1, f),
-                elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
-            ])
-        },
-
-        RawStuckKind::TaggedEqInnerInjective {
-            tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-        } => {
-            args!(f, "tagged_eq_inner_injective", [
-                tag_0 = write!(f, "{:?}", tag_0),
-                tag_1 = write!(f, "{:?}", tag_1),
-                untagged_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &untagged_ty_0, f),
-                untagged_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &untagged_ty_1, f),
                 elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
             ])
         },
@@ -813,58 +842,73 @@ fn pprint_raw_stuck_kind<S: Scheme>(
         },
 
         RawStuckKind::EqualEqEqTerm0Injective {
-            eq_ty_0, eq_ty_1,
+            eq_ty,
             eq_term_0_0, eq_term_0_1,
             eq_term_1_0, eq_term_1_1,
             elim,
         } => {
             args!(f, "equal_eq_eq_term_0_injective", [
-                eq_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &eq_ty_0, f),
-                eq_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &eq_ty_1, f),
+                eq_ty = pprint_raw_ty(raw_ctx, filter.clone(), &eq_ty, f),
                 eq_term_0_0 = pprint_raw_term(
-                    raw_ctx, filter.clone(), &eq_ty_0, filter.clone(), &eq_term_0_0, f,
+                    raw_ctx, filter.clone(), &eq_ty, filter.clone(), &eq_term_0_0, f,
                 ),
                 eq_term_0_1 = pprint_raw_term(
-                    raw_ctx, filter.clone(), &eq_ty_0, filter.clone(), &eq_term_0_1, f,
+                    raw_ctx, filter.clone(), &eq_ty, filter.clone(), &eq_term_0_1, f,
                 ),
                 eq_term_1_0 = pprint_raw_term(
-                    raw_ctx, filter.clone(), &eq_ty_1, filter.clone(), &eq_term_1_0, f,
+                    raw_ctx, filter.clone(), &eq_ty, filter.clone(), &eq_term_1_0, f,
                 ),
                 eq_term_1_1 = pprint_raw_term(
-                    raw_ctx, filter.clone(), &eq_ty_1, filter.clone(), &eq_term_1_1, f,
+                    raw_ctx, filter.clone(), &eq_ty, filter.clone(), &eq_term_1_1, f,
                 ),
-                elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
+                elim = pprint_raw_stuck(raw_ctx, filter.clone(), &elim, f),
             ])
         },
 
         RawStuckKind::EqualEqEqTerm1Injective {
-            eq_ty_0, eq_ty_1,
+            eq_ty,
             eq_term_0_0, eq_term_0_1,
             eq_term_1_0, eq_term_1_1,
             elim,
         } => {
             args!(f, "equal_eq_eq_term_1_injective", [
-                eq_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &eq_ty_0, f),
-                eq_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &eq_ty_1, f),
+                eq_ty = pprint_raw_ty(raw_ctx, filter.clone(), &eq_ty, f),
                 eq_term_0_0 = pprint_raw_term(
-                    raw_ctx, filter.clone(), &eq_ty_0, filter.clone(), &eq_term_0_0, f,
+                    raw_ctx, filter.clone(), &eq_ty, filter.clone(), &eq_term_0_0, f,
                 ),
                 eq_term_0_1 = pprint_raw_term(
-                    raw_ctx, filter.clone(), &eq_ty_0, filter.clone(), &eq_term_0_1, f,
+                    raw_ctx, filter.clone(), &eq_ty, filter.clone(), &eq_term_0_1, f,
                 ),
                 eq_term_1_0 = pprint_raw_term(
-                    raw_ctx, filter.clone(), &eq_ty_1, filter.clone(), &eq_term_1_0, f,
+                    raw_ctx, filter.clone(), &eq_ty, filter.clone(), &eq_term_1_0, f,
                 ),
                 eq_term_1_1 = pprint_raw_term(
-                    raw_ctx, filter.clone(), &eq_ty_1, filter.clone(), &eq_term_1_1, f,
+                    raw_ctx, filter.clone(), &eq_ty, filter.clone(), &eq_term_1_1, f,
                 ),
+                elim = pprint_raw_stuck(raw_ctx, filter.clone(), &elim, f),
+            ])
+        },
+
+        RawStuckKind::SumEqNameInjective {
+            lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+        } => {
+            args!(f, "sum_eq_name_injective", [
+                lhs_name_0 = pprint_raw_name(raw_ctx, filter.clone(), &lhs_name_0, f),
+                lhs_name_1 = pprint_raw_name(raw_ctx, filter.clone(), &lhs_name_1, f),
+                lhs_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &lhs_ty_0, f),
+                lhs_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &lhs_ty_1, f),
+                rhs_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &rhs_ty_0, f),
+                rhs_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &rhs_ty_1, f),
                 elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
             ])
         },
 
-
-        RawStuckKind::SumEqLhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim } => {
+        RawStuckKind::SumEqLhsInjective {
+            lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+        } => {
             args!(f, "sum_eq_lhs_injective", [
+                lhs_name_0 = pprint_raw_name(raw_ctx, filter.clone(), &lhs_name_0, f),
+                lhs_name_1 = pprint_raw_name(raw_ctx, filter.clone(), &lhs_name_1, f),
                 lhs_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &lhs_ty_0, f),
                 lhs_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &lhs_ty_1, f),
                 rhs_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &rhs_ty_0, f),
@@ -873,8 +917,12 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ])
         },
 
-        RawStuckKind::SumEqRhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim } => {
+        RawStuckKind::SumEqRhsInjective {
+            lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+        } => {
             args!(f, "sum_eq_rhs_injective", [
+                lhs_name_0 = pprint_raw_name(raw_ctx, filter.clone(), &lhs_name_0, f),
+                lhs_name_1 = pprint_raw_name(raw_ctx, filter.clone(), &lhs_name_1, f),
                 lhs_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &lhs_ty_0, f),
                 lhs_ty_1 = pprint_raw_ty(raw_ctx, filter.clone(), &lhs_ty_1, f),
                 rhs_ty_0 = pprint_raw_ty(raw_ctx, filter.clone(), &rhs_ty_0, f),
@@ -883,8 +931,12 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ])
         },
 
-        RawStuckKind::SigmaEqHeadInjective { tail_ty_0, tail_ty_1, elim } => {
-            args!(f, "sigma_eq_head_injective", [
+        RawStuckKind::SigmaEqNameInjective {
+            head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+        } => {
+            args!(f, "sigma_eq_name_injective", [
+                head_name_0 = pprint_raw_name(raw_ctx, filter.clone(), &head_name_0, f),
+                head_name_1 = pprint_raw_name(raw_ctx, filter.clone(), &head_name_1, f),
                 tail_ty_0 = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -907,8 +959,12 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ])
         },
         
-        RawStuckKind::SigmaEqTailInjective { tail_ty_0, tail_ty_1, elim } => {
-            args!(f, "sigma_eq_tail_injective", [
+        RawStuckKind::SigmaEqHeadInjective {
+            head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+        } => {
+            args!(f, "sigma_eq_head_injective", [
+                head_name_0 = pprint_raw_name(raw_ctx, filter.clone(), &head_name_0, f),
+                head_name_1 = pprint_raw_name(raw_ctx, filter.clone(), &head_name_1, f),
                 tail_ty_0 = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -931,8 +987,39 @@ fn pprint_raw_stuck_kind<S: Scheme>(
             ])
         },
 
-        RawStuckKind::PiEqArgInjective { res_ty_0, res_ty_1, elim } => {
-            args!(f, "pi_eq_arg_injective", [
+        RawStuckKind::SigmaEqTailInjective {
+            head_name, tail_ty_0, tail_ty_1, elim,
+        } => {
+            args!(f, "sigma_eq_tail_injective", [
+                head_name = pprint_raw_name(raw_ctx, filter.clone(), &head_name, f),
+                tail_ty_0 = pprint_raw_scope(
+                    raw_ctx,
+                    filter.clone(),
+                    &tail_ty_0,
+                    |raw_ctx, filter, tail_ty_0, f| {
+                        pprint_raw_ty(raw_ctx, filter, tail_ty_0, f)
+                    },
+                    f,
+                ),
+                tail_ty_1 = pprint_raw_scope(
+                    raw_ctx,
+                    filter.clone(),
+                    &tail_ty_1,
+                    |raw_ctx, filter, tail_ty_1, f| {
+                        pprint_raw_ty(raw_ctx, filter, tail_ty_1, f)
+                    },
+                    f,
+                ),
+                elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
+            ])
+        },
+
+        RawStuckKind::PiEqNameInjective {
+            arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+        } => {
+            args!(f, "pi_eq_name_injective", [
+                arg_name_0 = pprint_raw_name(raw_ctx, filter.clone(), &arg_name_0, f),
+                arg_name_1 = pprint_raw_name(raw_ctx, filter.clone(), &arg_name_1, f),
                 res_ty_0 = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -954,9 +1041,13 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                 elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
             ])
         },
-        
-        RawStuckKind::PiEqResInjective { res_ty_0, res_ty_1, elim } => {
-            args!(f, "pi_eq_res_injective", [
+
+        RawStuckKind::PiEqArgInjective {
+            arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+        } => {
+            args!(f, "pi_eq_arg_injective", [
+                arg_name_0 = pprint_raw_name(raw_ctx, filter.clone(), &arg_name_0, f),
+                arg_name_1 = pprint_raw_name(raw_ctx, filter.clone(), &arg_name_1, f),
                 res_ty_0 = pprint_raw_scope(
                     raw_ctx,
                     filter.clone(),
@@ -977,6 +1068,56 @@ fn pprint_raw_stuck_kind<S: Scheme>(
                 ),
                 elim = pprint_raw_stuck(raw_ctx, filter, &elim, f),
             ])
+        },
+
+        RawStuckKind::PiEqResInjective {
+            arg_name, res_ty_0, res_ty_1, elim,
+        } => {
+            args!(f, "pi_eq_res_injective", [
+                arg_name = pprint_raw_name(raw_ctx, filter.clone(), &arg_name, f),
+                res_ty_0 = pprint_raw_scope(
+                    raw_ctx,
+                    filter.clone(),
+                    &res_ty_0,
+                    |raw_ctx, filter, res_ty_0, f| {
+                        pprint_raw_ty(raw_ctx, filter, res_ty_0, f)
+                    },
+                    f,
+                ),
+                res_ty_1 = pprint_raw_scope(
+                    raw_ctx,
+                    filter.clone(),
+                    &res_ty_1,
+                    |raw_ctx, filter, res_ty_1, f| {
+                        pprint_raw_ty(raw_ctx, filter, res_ty_1, f)
+                    },
+                    f,
+                ),
+                elim = pprint_raw_stuck(raw_ctx, filter.clone(), &elim, f),
+            ])
+        },
+    }
+    Ok(())
+}
+
+fn pprint_raw_name_kind<S: Scheme>(
+    raw_ctx: &RawCtx<S>,
+    filter: Usages,
+    raw_name_kind: &RawNameKind<S>,
+    f: &mut fmt::Formatter,
+) -> fmt::Result {
+    match raw_name_kind {
+        RawNameKind::Stuck { stuck } => {
+            let stuck = Weaken {
+                usages: Usages::ones(filter.count_ones()),
+                weak: stuck.clone(),
+            };
+            args!(f, "stuck", [
+                stuck = pprint_raw_stuck(raw_ctx, filter, &stuck, f),
+            ]);
+        },
+        RawNameKind::Tag { tag } => {
+            write!(f, "{:?}", tag)?;
         },
     }
     Ok(())

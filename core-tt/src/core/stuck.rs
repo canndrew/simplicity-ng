@@ -1,20 +1,25 @@
 use crate::priv_prelude::*;
 
-#[derive_where(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive_where(Clone)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Stuck<S: Scheme> {
     pub(crate) raw_ctx: RawCtx<S>,
     pub(crate) raw_typed_stuck: RawTyped<S, Intern<RawStuckKind<S>>>,
 }
 
-#[derive_where(Clone)]
+/*
+impl<S: Scheme> PartialEq for Stuck<S> {
+    fn eq(&self, other: &Stuck<S>) -> bool {
+        let (_, (stuck_0, stuck_1)) = merge_ctxs((self, other));
+        stuck_0 == stuck_1
+    }
+}
+*/
+
+#[derive_where(Clone, Debug)]
 pub enum StuckKind<S: Scheme> {
     Var {
         index: usize,
-    },
-    StripTag {
-        tag: S::Tag,
-        elim: Stuck<S>,
     },
     ForLoop {
         elim: Stuck<S>,
@@ -67,12 +72,12 @@ pub enum StuckKind<S: Scheme> {
         arg_term: Tm<S>,
     },
 
-    TaggedEqTagInjective {
+    TagsApart {
+        tag_0: S::Tag,
+        tag_1: S::Tag,
         elim: Stuck<S>,
     },
-    TaggedEqInnerInjective {
-        elim: Stuck<S>,
-    },
+
     EqualEqEqTyInjective {
         elim: Stuck<S>,
     },
@@ -82,16 +87,28 @@ pub enum StuckKind<S: Scheme> {
     EqualEqEqTerm1Injective {
         elim: Stuck<S>,
     },
+
+    SumEqNameInjective {
+        elim: Stuck<S>,
+    },
     SumEqLhsInjective {
         elim: Stuck<S>,
     },
     SumEqRhsInjective {
         elim: Stuck<S>,
     },
+
+    SigmaEqNameInjective {
+        elim: Stuck<S>,
+    },
     SigmaEqHeadInjective {
         elim: Stuck<S>,
     },
     SigmaEqTailInjective {
+        elim: Stuck<S>,
+    },
+
+    PiEqNameInjective {
         elim: Stuck<S>,
     },
     PiEqArgInjective {
@@ -152,6 +169,20 @@ impl<S: Scheme> Stuck<S> {
         }
     }
 
+
+    pub fn to_name(&self) -> Name<S> {
+        let Stuck { raw_ctx, raw_typed_stuck } = self;
+        let (raw_ty, raw_stuck) = raw_typed_stuck.to_parts();
+        let RawTyKind::Name = raw_ty.weak.get_clone() else {
+            unreachable!();
+        };
+        let raw_name = RawName::stuck(raw_stuck);
+        Name {
+            raw_ctx: raw_ctx.clone(),
+            raw_name,
+        }
+    }
+
     pub fn kind(&self) -> StuckKind<S> {
         let ctx_len = self.raw_typed_stuck.usages.len();
         let Stuck { raw_ctx, raw_typed_stuck } = self;
@@ -160,18 +191,6 @@ impl<S: Scheme> Stuck<S> {
             RawStuckKind::Var => {
                 let index = raw_stuck.usages.index_of_single_one().unwrap();
                 StuckKind::Var { index }
-            },
-
-            RawStuckKind::StripTag { tag, untagged_ty, elim } => {
-                let untagged_ty = untagged_ty.clone_unfilter(&raw_stuck.usages);
-                let elim = elim.clone_unfilter(&raw_stuck.usages);
-                let elim_ty = RawTy::tagged(tag.clone(), untagged_ty);
-                let elim = RawTyped::from_parts(elim_ty, elim);
-                let elim = Stuck {
-                    raw_ctx: raw_ctx.clone(),
-                    raw_typed_stuck: elim,
-                };
-                StuckKind::StripTag { tag, elim }
             },
 
             RawStuckKind::ForLoop { elim, motive, zero_inhab, succ_inhab } => {
@@ -410,7 +429,8 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::Explode { elim, motive }
             },
 
-            RawStuckKind::Case { elim, motive, lhs_inhab, rhs_inhab } => {
+            RawStuckKind::Case { lhs_name, elim, motive, lhs_inhab, rhs_inhab } => {
+                let lhs_name = lhs_name.clone_unfilter(&raw_stuck.usages);
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let motive = motive.clone_unfilter(&raw_stuck.usages);
                 let lhs_inhab = lhs_inhab.clone_unfilter(&raw_stuck.usages);
@@ -444,7 +464,7 @@ impl<S: Scheme> Stuck<S> {
                     raw_scope: rhs_inhab,
                 };
 
-                let elim_ty = RawTy::sum(lhs_ty.clone(), rhs_ty.clone());
+                let elim_ty = RawTy::sum(lhs_name, lhs_ty.clone(), rhs_ty.clone());
                 let elim = RawTyped::from_parts(elim_ty.clone(), elim);
                 let elim = Stuck {
                     raw_ctx: raw_ctx.clone(),
@@ -459,11 +479,12 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::Case { elim, motive, lhs_inhab, rhs_inhab }
             },
 
-            RawStuckKind::ProjHead { tail_ty, elim } => {
+            RawStuckKind::ProjHead { head_name, tail_ty, elim } => {
+                let head_name = head_name.clone_unfilter(&raw_stuck.usages);
                 let tail_ty = tail_ty.clone_unfilter(&raw_stuck.usages);
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
 
-                let elim_ty = RawTy::sigma(tail_ty.clone());
+                let elim_ty = RawTy::sigma(head_name, tail_ty.clone());
                 let elim = RawTyped::from_parts(elim_ty.clone(), elim);
                 let elim = Stuck {
                     raw_ctx: raw_ctx.clone(),
@@ -473,11 +494,12 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::ProjHead { elim }
             },
 
-            RawStuckKind::ProjTail { tail_ty, elim } => {
+            RawStuckKind::ProjTail { head_name, tail_ty, elim } => {
+                let head_name = head_name.clone_unfilter(&raw_stuck.usages);
                 let tail_ty = tail_ty.clone_unfilter(&raw_stuck.usages);
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
 
-                let elim_ty = RawTy::sigma(tail_ty.clone());
+                let elim_ty = RawTy::sigma(head_name, tail_ty.clone());
                 let elim = RawTyped::from_parts(elim_ty.clone(), elim);
                 let elim = Stuck {
                     raw_ctx: raw_ctx.clone(),
@@ -487,13 +509,14 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::ProjTail { elim }
             },
 
-            RawStuckKind::App { res_ty, elim, arg_term } => {
+            RawStuckKind::App { arg_name, res_ty, elim, arg_term } => {
+                let arg_name = arg_name.clone_unfilter(&raw_stuck.usages);
                 let res_ty = res_ty.clone_unfilter(&raw_stuck.usages);
                 let arg_ty = res_ty.var_ty_unfiltered();
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let arg_term = arg_term.clone_unfilter(&raw_stuck.usages);
 
-                let elim_ty = RawTy::pi(res_ty);
+                let elim_ty = RawTy::pi(arg_name, res_ty);
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
                     raw_ctx: raw_ctx.clone(),
@@ -509,42 +532,19 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::App { elim, arg_term }
             },
 
-            RawStuckKind::TaggedEqTagInjective {
-                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-            } => {
-                let untagged_ty_0 = untagged_ty_0.clone_unfilter(&raw_stuck.usages);
-                let untagged_ty_1 = untagged_ty_1.clone_unfilter(&raw_stuck.usages);
+            RawStuckKind::TagsApart { tag_0, tag_1, elim } => {
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
-                    RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::tagged(tag_0, untagged_ty_0)),
-                    RawTm::from_ty(RawTy::tagged(tag_1, untagged_ty_1)),
+                    RawTy::name(ctx_len),
+                    RawTm::from_name(RawName::tag(ctx_len, tag_0.clone())),
+                    RawTm::from_name(RawName::tag(ctx_len, tag_1.clone())),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
                     raw_ctx: raw_ctx.clone(),
                     raw_typed_stuck: elim,
                 };
-                StuckKind::TaggedEqTagInjective { elim }
-            },
-
-            RawStuckKind::TaggedEqInnerInjective {
-                tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-            } => {
-                let untagged_ty_0 = untagged_ty_0.clone_unfilter(&raw_stuck.usages);
-                let untagged_ty_1 = untagged_ty_1.clone_unfilter(&raw_stuck.usages);
-                let elim = elim.clone_unfilter(&raw_stuck.usages);
-                let elim_ty = RawTy::equal(
-                    RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::tagged(tag_0, untagged_ty_0)),
-                    RawTm::from_ty(RawTy::tagged(tag_1, untagged_ty_1)),
-                );
-                let elim = RawTyped::from_parts(elim_ty, elim);
-                let elim = Stuck {
-                    raw_ctx: raw_ctx.clone(),
-                    raw_typed_stuck: elim,
-                };
-                StuckKind::TaggedEqInnerInjective { elim }
+                StuckKind::TagsApart { tag_0, tag_1, elim }
             },
 
             RawStuckKind::EqualEqEqTyInjective {
@@ -574,13 +574,12 @@ impl<S: Scheme> Stuck<S> {
             },
 
             RawStuckKind::EqualEqEqTerm0Injective {
-                eq_ty_0, eq_ty_1,
+                eq_ty,
                 eq_term_0_0, eq_term_0_1,
                 eq_term_1_0, eq_term_1_1,
                 elim,
             } => {
-                let eq_ty_0 = eq_ty_0.clone_unfilter(&raw_stuck.usages);
-                let eq_ty_1 = eq_ty_1.clone_unfilter(&raw_stuck.usages);
+                let eq_ty = eq_ty.clone_unfilter(&raw_stuck.usages);
                 let eq_term_0_0 = eq_term_0_0.clone_unfilter(&raw_stuck.usages);
                 let eq_term_0_1 = eq_term_0_1.clone_unfilter(&raw_stuck.usages);
                 let eq_term_1_0 = eq_term_1_0.clone_unfilter(&raw_stuck.usages);
@@ -588,8 +587,8 @@ impl<S: Scheme> Stuck<S> {
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
                     RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::equal(eq_ty_0, eq_term_0_0, eq_term_1_0)),
-                    RawTm::from_ty(RawTy::equal(eq_ty_1, eq_term_0_1, eq_term_1_1)),
+                    RawTm::from_ty(RawTy::equal(eq_ty.clone(), eq_term_0_0, eq_term_1_0)),
+                    RawTm::from_ty(RawTy::equal(eq_ty, eq_term_0_1, eq_term_1_1)),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
@@ -600,13 +599,12 @@ impl<S: Scheme> Stuck<S> {
             },
 
             RawStuckKind::EqualEqEqTerm1Injective {
-                eq_ty_0, eq_ty_1,
+                eq_ty,
                 eq_term_0_0, eq_term_0_1,
                 eq_term_1_0, eq_term_1_1,
                 elim,
             } => {
-                let eq_ty_0 = eq_ty_0.clone_unfilter(&raw_stuck.usages);
-                let eq_ty_1 = eq_ty_1.clone_unfilter(&raw_stuck.usages);
+                let eq_ty = eq_ty.clone_unfilter(&raw_stuck.usages);
                 let eq_term_0_0 = eq_term_0_0.clone_unfilter(&raw_stuck.usages);
                 let eq_term_0_1 = eq_term_0_1.clone_unfilter(&raw_stuck.usages);
                 let eq_term_1_0 = eq_term_1_0.clone_unfilter(&raw_stuck.usages);
@@ -614,8 +612,8 @@ impl<S: Scheme> Stuck<S> {
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
                     RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::equal(eq_ty_0, eq_term_0_0, eq_term_1_0)),
-                    RawTm::from_ty(RawTy::equal(eq_ty_1, eq_term_0_1, eq_term_1_1)),
+                    RawTm::from_ty(RawTy::equal(eq_ty.clone(), eq_term_0_0, eq_term_1_0)),
+                    RawTm::from_ty(RawTy::equal(eq_ty, eq_term_0_1, eq_term_1_1)),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
@@ -625,7 +623,11 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::EqualEqEqTerm1Injective { elim }
             },
 
-            RawStuckKind::SumEqLhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim } => {
+            RawStuckKind::SumEqNameInjective {
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+            } => {
+                let lhs_name_0 = lhs_name_0.clone_unfilter(&raw_stuck.usages);
+                let lhs_name_1 = lhs_name_1.clone_unfilter(&raw_stuck.usages);
                 let lhs_ty_0 = lhs_ty_0.clone_unfilter(&raw_stuck.usages);
                 let lhs_ty_1 = lhs_ty_1.clone_unfilter(&raw_stuck.usages);
                 let rhs_ty_0 = rhs_ty_0.clone_unfilter(&raw_stuck.usages);
@@ -633,8 +635,31 @@ impl<S: Scheme> Stuck<S> {
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
                     RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::sum(lhs_ty_0, rhs_ty_0)),
-                    RawTm::from_ty(RawTy::sum(lhs_ty_1, rhs_ty_1)),
+                    RawTm::from_ty(RawTy::sum(lhs_name_0, lhs_ty_0, rhs_ty_0)),
+                    RawTm::from_ty(RawTy::sum(lhs_name_1, lhs_ty_1, rhs_ty_1)),
+                );
+                let elim = RawTyped::from_parts(elim_ty, elim);
+                let elim = Stuck {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_typed_stuck: elim,
+                };
+                StuckKind::SumEqNameInjective { elim }
+            },
+
+            RawStuckKind::SumEqLhsInjective {
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+            } => {
+                let lhs_name_0 = lhs_name_0.clone_unfilter(&raw_stuck.usages);
+                let lhs_name_1 = lhs_name_1.clone_unfilter(&raw_stuck.usages);
+                let lhs_ty_0 = lhs_ty_0.clone_unfilter(&raw_stuck.usages);
+                let lhs_ty_1 = lhs_ty_1.clone_unfilter(&raw_stuck.usages);
+                let rhs_ty_0 = rhs_ty_0.clone_unfilter(&raw_stuck.usages);
+                let rhs_ty_1 = rhs_ty_1.clone_unfilter(&raw_stuck.usages);
+                let elim = elim.clone_unfilter(&raw_stuck.usages);
+                let elim_ty = RawTy::equal(
+                    RawTy::universe(ctx_len),
+                    RawTm::from_ty(RawTy::sum(lhs_name_0, lhs_ty_0, rhs_ty_0)),
+                    RawTm::from_ty(RawTy::sum(lhs_name_1, lhs_ty_1, rhs_ty_1)),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
@@ -644,7 +669,11 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::SumEqLhsInjective { elim }
             },
 
-            RawStuckKind::SumEqRhsInjective { lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim } => {
+            RawStuckKind::SumEqRhsInjective {
+                lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+            } => {
+                let lhs_name_0 = lhs_name_0.clone_unfilter(&raw_stuck.usages);
+                let lhs_name_1 = lhs_name_1.clone_unfilter(&raw_stuck.usages);
                 let lhs_ty_0 = lhs_ty_0.clone_unfilter(&raw_stuck.usages);
                 let lhs_ty_1 = lhs_ty_1.clone_unfilter(&raw_stuck.usages);
                 let rhs_ty_0 = rhs_ty_0.clone_unfilter(&raw_stuck.usages);
@@ -652,8 +681,8 @@ impl<S: Scheme> Stuck<S> {
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
                     RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::sum(lhs_ty_0, rhs_ty_0)),
-                    RawTm::from_ty(RawTy::sum(lhs_ty_1, rhs_ty_1)),
+                    RawTm::from_ty(RawTy::sum(lhs_name_0, lhs_ty_0, rhs_ty_0)),
+                    RawTm::from_ty(RawTy::sum(lhs_name_1, lhs_ty_1, rhs_ty_1)),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
@@ -663,14 +692,39 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::SumEqRhsInjective { elim }
             },
 
-            RawStuckKind::SigmaEqHeadInjective { tail_ty_0, tail_ty_1, elim } => {
+            RawStuckKind::SigmaEqNameInjective {
+                head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+            } => {
+                let head_name_0 = head_name_0.clone_unfilter(&raw_stuck.usages);
+                let head_name_1 = head_name_1.clone_unfilter(&raw_stuck.usages);
                 let tail_ty_0 = tail_ty_0.clone_unfilter(&raw_stuck.usages);
                 let tail_ty_1 = tail_ty_1.clone_unfilter(&raw_stuck.usages);
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
                     RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::sigma(tail_ty_0)),
-                    RawTm::from_ty(RawTy::sigma(tail_ty_1)),
+                    RawTm::from_ty(RawTy::sigma(head_name_0, tail_ty_0)),
+                    RawTm::from_ty(RawTy::sigma(head_name_1, tail_ty_1)),
+                );
+                let elim = RawTyped::from_parts(elim_ty, elim);
+                let elim = Stuck {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_typed_stuck: elim,
+                };
+                StuckKind::SigmaEqNameInjective { elim }
+            },
+
+            RawStuckKind::SigmaEqHeadInjective {
+                head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+            } => {
+                let head_name_0 = head_name_0.clone_unfilter(&raw_stuck.usages);
+                let head_name_1 = head_name_1.clone_unfilter(&raw_stuck.usages);
+                let tail_ty_0 = tail_ty_0.clone_unfilter(&raw_stuck.usages);
+                let tail_ty_1 = tail_ty_1.clone_unfilter(&raw_stuck.usages);
+                let elim = elim.clone_unfilter(&raw_stuck.usages);
+                let elim_ty = RawTy::equal(
+                    RawTy::universe(ctx_len),
+                    RawTm::from_ty(RawTy::sigma(head_name_0, tail_ty_0)),
+                    RawTm::from_ty(RawTy::sigma(head_name_1, tail_ty_1)),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
@@ -680,31 +734,63 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::SigmaEqHeadInjective { elim }
             },
 
-            RawStuckKind::SigmaEqTailInjective { tail_ty_0, tail_ty_1, elim } => {
+            RawStuckKind::SigmaEqTailInjective {
+                head_name,
+                tail_ty_0,
+                tail_ty_1,
+                elim,
+            } => {
+                let head_name = head_name.clone_unfilter(&raw_stuck.usages);
                 let tail_ty_0 = tail_ty_0.clone_unfilter(&raw_stuck.usages);
                 let tail_ty_1 = tail_ty_1.clone_unfilter(&raw_stuck.usages);
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
                     RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::sigma(tail_ty_0)),
-                    RawTm::from_ty(RawTy::sigma(tail_ty_1)),
+                    RawTm::from_ty(RawTy::sigma(head_name.clone(), tail_ty_0)),
+                    RawTm::from_ty(RawTy::sigma(head_name, tail_ty_1)),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
                     raw_ctx: raw_ctx.clone(),
                     raw_typed_stuck: elim,
                 };
+
                 StuckKind::SigmaEqTailInjective { elim }
             },
 
-            RawStuckKind::PiEqArgInjective { res_ty_0, res_ty_1, elim } => {
+            RawStuckKind::PiEqNameInjective {
+                arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+            } => {
+                let arg_name_0 = arg_name_0.clone_unfilter(&raw_stuck.usages);
+                let arg_name_1 = arg_name_1.clone_unfilter(&raw_stuck.usages);
                 let res_ty_0 = res_ty_0.clone_unfilter(&raw_stuck.usages);
                 let res_ty_1 = res_ty_1.clone_unfilter(&raw_stuck.usages);
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
                     RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::pi(res_ty_0)),
-                    RawTm::from_ty(RawTy::pi(res_ty_1)),
+                    RawTm::from_ty(RawTy::pi(arg_name_0, res_ty_0)),
+                    RawTm::from_ty(RawTy::pi(arg_name_1, res_ty_1)),
+                );
+                let elim = RawTyped::from_parts(elim_ty, elim);
+                let elim = Stuck {
+                    raw_ctx: raw_ctx.clone(),
+                    raw_typed_stuck: elim,
+                };
+                StuckKind::PiEqNameInjective { elim }
+            },
+
+            RawStuckKind::PiEqArgInjective {
+                arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+            } => {
+                let arg_name_0 = arg_name_0.clone_unfilter(&raw_stuck.usages);
+                let arg_name_1 = arg_name_1.clone_unfilter(&raw_stuck.usages);
+                let res_ty_0 = res_ty_0.clone_unfilter(&raw_stuck.usages);
+                let res_ty_1 = res_ty_1.clone_unfilter(&raw_stuck.usages);
+                let elim = elim.clone_unfilter(&raw_stuck.usages);
+                let elim_ty = RawTy::equal(
+                    RawTy::universe(ctx_len),
+                    RawTm::from_ty(RawTy::pi(arg_name_0, res_ty_0)),
+                    RawTm::from_ty(RawTy::pi(arg_name_1, res_ty_1)),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
@@ -714,14 +800,17 @@ impl<S: Scheme> Stuck<S> {
                 StuckKind::PiEqArgInjective { elim }
             },
 
-            RawStuckKind::PiEqResInjective { res_ty_0, res_ty_1, elim } => {
+            RawStuckKind::PiEqResInjective {
+                arg_name, res_ty_0, res_ty_1, elim,
+            } => {
+                let arg_name = arg_name.clone_unfilter(&raw_stuck.usages);
                 let res_ty_0 = res_ty_0.clone_unfilter(&raw_stuck.usages);
                 let res_ty_1 = res_ty_1.clone_unfilter(&raw_stuck.usages);
                 let elim = elim.clone_unfilter(&raw_stuck.usages);
                 let elim_ty = RawTy::equal(
                     RawTy::universe(ctx_len),
-                    RawTm::from_ty(RawTy::pi(res_ty_0)),
-                    RawTm::from_ty(RawTy::pi(res_ty_1)),
+                    RawTm::from_ty(RawTy::pi(arg_name.clone(), res_ty_0)),
+                    RawTm::from_ty(RawTy::pi(arg_name, res_ty_1)),
                 );
                 let elim = RawTyped::from_parts(elim_ty, elim);
                 let elim = Stuck {
@@ -736,32 +825,6 @@ impl<S: Scheme> Stuck<S> {
     pub fn contains_var(&self, index: usize) -> bool {
         self.raw_typed_stuck.usages[index]
     }
-
-    /*
-    pub fn strengthen_maximally(&self) -> (Stuck<S>, Usages) {
-        let usages = self.raw_typed_stuck.usages.with_usages_from_ctx(&self.raw_ctx);
-        let raw_ctx = self.raw_ctx.filter(usages.len(), &usages);
-        let raw_typed_stuck = self.raw_typed_stuck.clone_filter(&usages);
-        let stuck = Stuck { raw_ctx, raw_typed_stuck };
-        (stuck, usages)
-    }
-    */
-
-    /*
-    pub fn map_scheme<V: Scheme>(
-        &self,
-        map_user_ty: impl FnMut(&S::UserTy) -> V::UserTy,
-        map_user_term: impl FnMut(&S::UserTm) -> V::UserTm,
-    ) -> Stuck<V> {
-        let mut map_user_ty = map_user_ty;
-        let mut map_user_term = map_user_term;
-
-        let Stuck { raw_ctx, raw_typed_stuck } = self;
-        let raw_ctx = raw_ctx.map_scheme(&mut map_user_ty, &mut map_user_term);
-        let raw_typed_stuck = raw_typed_stuck.map_scheme(&mut map_user_ty, &mut map_user_term);
-        Stuck { raw_ctx, raw_typed_stuck }
-    }
-    */
 
     pub fn as_var(&self) -> Option<usize> {
         self.raw_typed_stuck.inner_unfiltered().as_var()

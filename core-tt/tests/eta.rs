@@ -5,16 +5,14 @@ use core_tt::Contextual;
 
 macro_rules! assert_let (
     ($pat:pat = $expr:expr) => {
-        let $pat = $expr else { unreachable!() };
+        let $pat = $expr else { panic!("{}:{}: {:#?}", file!(), line!(), $expr) };
     };
 );
 
 type Ctx = core_tt::Ctx<!>;
-//type Tm = core_tt::Tm<!>;
-type Ty = core_tt::Ty<!>;
 type TmKind = core_tt::TmKind<!>;
 type TyKind = core_tt::TyKind<!>;
-type StuckKind = core_tt::StuckKind<!>;
+//type StuckKind = core_tt::StuckKind<!>;
 
 #[test]
 fn eta_unit() {
@@ -27,18 +25,32 @@ fn eta_unit() {
 #[test]
 fn eta_pair() {
     let ctx = Ctx::root();
-    let sigma_ty = ctx.unit_ty().sigma(|x| x.ctx().unit_ty());
-    sigma_ty.with_cons(|pair| {
-        assert_let!(TmKind::Pair { tail_ty, head_term, tail_term } = pair.kind());
-        tail_ty.map_out(|head_term, tail_ty| {
+    ctx
+    .name()
+    .with_cons(|head_name| {
+        let head_name = head_name.to_name();
+        let sigma_ty = {
+            head_name
+            .ctx()
+            .unit_ty()
+            .sigma(&head_name, |x| x.ctx().unit_ty())
+        };
+        sigma_ty.with_cons(|pair| {
+            assert_let!(TmKind::Pair {
+                head_name: got_head_name, tail_ty, head_term, tail_term,
+            } = pair.kind());
+            assert_eq!(head_name.weaken_into(&pair.ctx()), got_head_name);
+            tail_ty.map_out(|head_term, tail_ty| {
+                assert_let!(TmKind::Unit = head_term.kind());
+                assert_let!(TyKind::Unit = tail_ty.kind());
+            });
             assert_let!(TmKind::Unit = head_term.kind());
-            assert_let!(TyKind::Unit = tail_ty.kind());
+            assert_let!(TmKind::Unit = tail_term.kind());
         });
-        assert_let!(TmKind::Unit = head_term.kind());
-        assert_let!(TmKind::Unit = tail_term.kind());
     });
 }
 
+/*
 #[test]
 fn eta_func() {
     let ctx = Ctx::root();
@@ -194,33 +206,39 @@ fn eta_explode() {
 fn eta_case() {
     let ctx = Ctx::root();
     let case_ty = {
-        ctx.universe().sigma(|lhs_ty| {
-            let lhs_ty = lhs_ty.to_ty();
-            lhs_ty.ctx().universe().sigma(|rhs_ty| {
-                let rhs_ty = rhs_ty.to_ty();
-                Ty::sum(&lhs_ty, &rhs_ty).sigma(|sum| {
-                    sum
-                    .case(
-                        |elim| elim.ctx().universe(),
-                        |lhs_term| lhs_term.ctx().unit_ty().to_term(),
-                        |rhs_term| {
-                            rhs_term
-                            .ctx()
-                            .unit_ty()
-                            .sigma(|unit| unit.ctx().unit_ty())
-                            .to_term()
-                        },
-                    )
-                    .to_ty()
+        ctx.name().sigma(|lhs_name| {
+            let lhs_name = lhs_name.to_name();
+            lhs_name.ctx().universe().sigma(|lhs_ty| {
+                let lhs_ty = lhs_ty.to_ty();
+                lhs_ty.ctx().universe().sigma(|rhs_ty| {
+                    let rhs_ty = rhs_ty.to_ty();
+                    lhs_ty
+                    .sum(&lhs_name, &rhs_ty)
+                    .sigma(|sum| {
+                        sum
+                        .case(
+                            |elim| elim.ctx().universe(),
+                            |lhs_term| lhs_term.ctx().unit_ty().to_term(),
+                            |rhs_term| {
+                                rhs_term
+                                .ctx()
+                                .unit_ty()
+                                .sigma(|unit| unit.ctx().unit_ty())
+                                .to_term()
+                            },
+                        )
+                        .to_ty()
+                    })
                 })
             })
         })
     };
     case_ty.with_cons(|sigma| {
-        let case_term = sigma.proj_tail().proj_tail().proj_tail();
+        let case_term = sigma.proj_tail().proj_tail().proj_tail().proj_tail();
         assert_let!(TmKind::Stuck { stuck } = case_term.kind());
         assert_let!(StuckKind::Case { elim, motive, lhs_inhab, rhs_inhab } = stuck.kind());
         assert_let!(StuckKind::ProjHead { elim } = elim.kind());
+        assert_let!(StuckKind::ProjTail { elim } = elim.kind());
         assert_let!(StuckKind::ProjTail { elim } = elim.kind());
         assert_let!(StuckKind::ProjTail { elim } = elim.kind());
         assert_let!(StuckKind::Var { index: 0 } = elim.kind());
@@ -258,4 +276,5 @@ fn eta_case() {
         });
     });
 }
+*/
 

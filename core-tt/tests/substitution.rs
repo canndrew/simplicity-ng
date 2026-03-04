@@ -15,7 +15,9 @@ fn subst_zero() {
 #[test]
 fn subst_add_mul() {
     let ctx = Ctx::root();
-    ctx.with_cons(&ctx.nat(), |x| {
+    ctx
+    .nat()
+    .with_cons(|x| {
         let scope = x.ctx().nat().scope(|y| {
             Tm::add(
                 &y.ctx().nat_constant(3u32),

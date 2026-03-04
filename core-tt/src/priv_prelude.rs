@@ -14,15 +14,19 @@ pub(crate) use {
     derive_where::derive_where,
     crate::{
         scheme::Scheme,
-        core::{Contextual, Ctx, Ty, TyKind, Tm, Stuck, Scope},
+        core::{
+            Contextual, NonContextual, BundleOfContextual,
+            Ctx, Ty, Tm, Stuck, Scope, Name,
+        },
         usages::Usages,
         non_zero_big_uint::NonZeroBigUint,
         raw::{
+            BundleOfContextualRaw, merge_ctxs,
             Substitute, Weaken, RawCtx, RawCtxCons, RawTy, RawTm, RawStuck, RawScope, RawScopeKind,
             RawTyKind, RawTmKind, RawStuckKind, RawTyped, RawTypedKind,
-            //RawContextualTuple, SubstituteTuple, RawPack, 
             raw_scope, raw_scope_2, raw_scope_3, try_raw_scope,
             RawNat, MaxAll, AddAll, MulAll,
+            RawName, RawNameKind,
         },
         intern::{Interner, Intern},
         util::as_equal,
@@ -39,7 +43,7 @@ pub(crate) use {
 #[cfg(feature = "arbitrary")]
 pub(crate) use {
     arbitrary::{Arbitrary, Unstructured},
-    crate::core::TmKind,
+    crate::core::{TyKind, TmKind},
 };
 
 #[cfg(feature = "pretty-formatting")]

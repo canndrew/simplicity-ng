@@ -52,7 +52,7 @@ impl Usages {
         let usages_len = {
             let (first, rest) = usagess.split_first().unwrap();
             let usages_len = first.len();
-            rest.iter().for_each(|usages| assert_eq!(usages.len(), usages_len));
+            rest.iter().for_each(|usages| assert_eq!(usages_len, usages.len()));
             usages_len
         };
         let bits: SmallBitVec = {
@@ -225,6 +225,21 @@ impl Usages {
 
     pub fn weaken(&mut self, ext_len: usize) {
         self.bits.extend(iter::repeat(false).take(ext_len));
+    }
+
+    pub fn strengthen_index(&mut self, index: usize) {
+        assert!(!self.bits[index]);
+        self.bits.remove(index);
+    }
+
+    pub fn is_superset_of_prefix(&self, other: &Usages) -> bool {
+        assert!(self.len() >= other.len());
+        self.bits.iter().zip(other.bits.iter()).all(|(bit_0, bit_1)| bit_0 || !bit_1)
+    }
+
+    pub fn equals_prefix(&self, other: &Usages) -> bool {
+        assert!(self.len() >= other.len());
+        self.bits.iter().zip(other.bits.iter()).all(|(bit_0, bit_1)| bit_0 == bit_1)
     }
 
     /*

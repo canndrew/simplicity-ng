@@ -13,6 +13,7 @@ im = "*"
 indexmap = "*"
 lazy_static = "*"
 derive-where = "*"
+hashbrown = "*"
 
 [features]
 default = ["pretty-formatting"]

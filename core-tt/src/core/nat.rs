@@ -1,5 +1,6 @@
 use crate::priv_prelude::*;
 
+#[derive(Clone)]
 pub struct Nat<S: Scheme> {
     pub(crate) raw_ctx: RawCtx<S>,
     pub(crate) raw_nat: RawNat<S>,

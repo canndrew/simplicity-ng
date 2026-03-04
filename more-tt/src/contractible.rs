@@ -15,9 +15,7 @@ impl<S: Scheme> Contractible<S> {
     ) -> Contractible<S> {
         let proof = term.ty().scope(|term_1| {
             let ret = proof(term_1.clone());
-            let TyKind::Equal { eq_term_0, eq_term_1 } = ret.ty().kind() else {
-                panic!();
-            };
+            let (eq_term_0, eq_term_1) = ret.ty().unwrap_equal();
             assert_eq!(eq_term_0, term_1);
             assert_eq!(eq_term_1, *term);
             ret

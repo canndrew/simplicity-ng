@@ -7,9 +7,8 @@ pub enum RawTmKind<S: Scheme> {
     Stuck {
         stuck: RawStuck<S>,
     },
-    Tagged {
+    Tag {
         tag: S::Tag,
-        inner_term: Intern<RawTmKind<S>>,
     },
     Type {
         ty: RawTy<S>,
@@ -28,10 +27,12 @@ pub enum RawTmKind<S: Scheme> {
         rhs_term: RawTm<S>,
     },
     Pair {
+        head_name: RawName<S>,
         head_term: RawTm<S>,
         tail_term: RawTm<S>,
     },
     Func {
+        arg_name: RawName<S>,
         res_term: RawScope<S, Intern<RawTmKind<S>>>,
     },
 }
@@ -44,35 +45,23 @@ impl<S: Scheme> RawTm<S> {
         Weaken { usages, weak }
     }
 
-    pub(crate) fn tagged(tag: S::Tag, inner_term: RawTm<S>) -> RawTm<S> {
-        if let RawTmKind::Stuck { stuck } = inner_term.weak.get_clone()
-        && let RawStuckKind::StripTag { tag: stuck_tag, untagged_ty: _, elim } = stuck.weak.get_clone()
-        && tag == stuck_tag
-        {
-            let elim = RawTm::stuck(elim);
-            let elim = elim.unfilter(&inner_term.usages);
-            return elim;
+    pub(crate) fn tag(ctx_len: usize, tag: S::Tag) -> RawTm<S> {
+        Weaken {
+            usages: Usages::zeros(ctx_len),
+            weak: RawTmKind::tag(tag),
         }
-
-        let Weaken { usages, weak: inner_term } = inner_term;
-        let weak = Intern::new(RawTmKind::Tagged { tag, inner_term });
-        Weaken { usages, weak }
     }
 
-    pub(crate) fn strip_tag(tag: S::Tag, untagged_ty: RawTy<S>, elim: RawTm<S>) -> RawTm<S> {
-        match elim.weak.get_clone() {
-            RawTmKind::Stuck { stuck } => {
-                let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::strip_tag(tag, untagged_ty, elim))
+    pub(crate) fn from_name(name: RawName<S>) -> RawTm<S> {
+        let Weaken { usages, weak: name } = name;
+        match name {
+            RawNameKind::Stuck { stuck } => {
+                let stuck = Weaken { usages, weak: stuck };
+                RawTm::stuck(stuck)
             },
-            RawTmKind::Tagged { tag: term_tag, inner_term } => {
-                debug_assert_eq!(tag, term_tag);
-                Weaken {
-                    usages: elim.usages,
-                    weak: inner_term,
-                }
+            RawNameKind::Tag { tag } => {
+                RawTm::tag(usages.len(), tag)
             },
-            _ => unreachable!(),
         }
     }
 
@@ -178,20 +167,43 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn pair(
-        //_raw_ctx: &RawCtx<S>,
+        mut head_name: RawName<S>,
         mut head_term: RawTm<S>,
         mut tail_term: RawTm<S>,
     ) -> RawTm<S> {
         if let RawTmKind::Stuck { stuck } = head_term.weak.get_clone()
-        && let RawStuckKind::ProjHead { elim: head_elim, tail_ty: elim_tail_ty, .. } = stuck.weak.get_clone()
+        && let RawStuckKind::ProjHead {
+            head_name: elim_head_name, elim: head_elim, tail_ty: elim_tail_ty,
+        } = stuck.weak.get_clone()
+        && head_name == elim_head_name.unfilter(&head_term.usages)
         {
             if let RawTmKind::Stuck { stuck } = tail_term.weak.get_clone()
             && let RawStuckKind::ProjTail { elim: tail_elim, .. } = stuck.weak.get_clone()
-            && let Some(elim) = as_equal(&head_elim, &tail_elim)
-            {
-                let ret = elim.clone_unfilter(&head_term.usages);
-                return RawTm::stuck(ret);
+            && let Some(elim) = as_equal(
+                head_elim.clone_unfilter(&head_term.usages),
+                tail_elim.unfilter(&tail_term.usages),
+            ) {
+                return RawTm::stuck(elim);
             }
+
+            let elim_tail_ty = {
+                elim_tail_ty
+                .clone_unfilter(&head_term.usages)
+            };
+            if let Some(eta_tail_term) = elim_tail_ty.unique_eta_term_opt(&mut Vec::new()) {
+                // Still not 100% sure this is sound.
+                // If you ever get stack overflows from infinite recursion then this is prolly it.
+                let eta_tail_term = eta_tail_term.bind(&head_term);
+                if tail_term == eta_tail_term {
+                    let ret = head_elim.unfilter(&head_term.usages);
+                    return RawTm::stuck(ret);
+                }
+            }
+
+
+            /*
+            // This won't infinitely recurse but it's an incomplete check and can lead to
+            // non-preservation of typing.
 
             let elim_tail_ty = {
                 let mut filter = elim_tail_ty.usages.clone_unfilter(&head_term.usages);
@@ -202,9 +214,14 @@ impl<S: Scheme> RawTm<S> {
                 let ret = head_elim.clone_unfilter(&head_term.usages);
                 return RawTm::stuck(ret);
             }
+            */
         }
+
         if let RawTmKind::Stuck { stuck } = tail_term.weak.get_clone()
-        && let RawStuckKind::ProjTail { elim: tail_elim, tail_ty: elim_tail_ty, .. } = stuck.weak.get_clone()
+        && let RawStuckKind::ProjTail {
+            head_name: elim_head_name, elim: tail_elim, tail_ty: elim_tail_ty,
+        } = stuck.weak.get_clone()
+        && head_name == elim_head_name.unfilter(&tail_term.usages)
         && head_term.is_unique_eta_term_for_type(
             &elim_tail_ty
             .var_ty_unfiltered()
@@ -214,52 +231,64 @@ impl<S: Scheme> RawTm<S> {
             return RawTm::stuck(ret);
         }
 
-        let usages = Usages::merge_mut([&mut head_term.usages, &mut tail_term.usages]);
+        let usages = Usages::merge_mut([
+            &mut head_name.usages, &mut head_term.usages, &mut tail_term.usages,
+        ]);
 
-        let weak = Intern::new(RawTmKind::Pair { head_term, tail_term });
+        let weak = Intern::new(RawTmKind::Pair { head_name, head_term, tail_term });
         Weaken { usages, weak }
     }
 
-    pub(crate) fn func(mut res_term: RawScope<S, Intern<RawTmKind<S>>>) -> RawTm<S> {
+    pub(crate) fn func(
+        mut arg_name: RawName<S>,
+        mut res_term: RawScope<S, Intern<RawTmKind<S>>>,
+    ) -> RawTm<S> {
         if let RawTmKind::Stuck { stuck } = res_term.weak.inner.weak.get_clone()
-        && let RawStuckKind::App { res_ty: _, elim, arg_term } = stuck.weak.get_clone()
+        && let RawStuckKind::App {
+            arg_name: app_arg_name, res_ty: _, elim, arg_term,
+        } = stuck.weak.get_clone()
         {
-            if res_term.var_used()
-            && !elim.usages.last()
-            && arg_term.usages.is_single(arg_term.usages.len().strict_sub(1))
-            && let RawTmKind::Stuck { stuck } = arg_term.weak.get_clone()
-            && let RawStuckKind::Var = stuck.weak.get_clone()
+            let mut app_arg_name = app_arg_name.unfilter(&res_term.weak.inner.usages);
+            if !app_arg_name.usages.pop()
+            && arg_name == app_arg_name.unfilter(&res_term.usages)
             {
-                let mut ret = elim.clone_unfilter(&res_term.weak.inner.usages);
-                ret.usages.pop();
-                let ret = ret.unfilter(&res_term.usages);
-                return RawTm::stuck(ret);
-            }
-            if !res_term.var_used()
-            && {
-                let mut arg_term = arg_term.clone_unfilter(&res_term.weak.inner.usages);
-                assert!(!arg_term.usages.pop());
-                arg_term.is_unique_eta_term_for_type(&res_term.weak.var_ty)
-            }
-            {
-                let ret = elim.clone();
-                let ret = ret.unfilter(&res_term.usages);
-                return RawTm::stuck(ret);
+                if res_term.var_used()
+                && !elim.usages.last()
+                && arg_term.usages.is_single(arg_term.usages.len().strict_sub(1))
+                && let RawTmKind::Stuck { stuck } = arg_term.weak.get_clone()
+                && let RawStuckKind::Var = stuck.weak.get_clone()
+                {
+                    let mut ret = elim.clone_unfilter(&res_term.weak.inner.usages);
+                    ret.usages.pop();
+                    let ret = ret.unfilter(&res_term.usages);
+                    return RawTm::stuck(ret);
+                }
+
+                if !res_term.var_used()
+                && {
+                    let mut arg_term = arg_term.clone_unfilter(&res_term.weak.inner.usages);
+                    assert!(!arg_term.usages.pop());
+                    arg_term.is_unique_eta_term_for_type(&res_term.weak.var_ty)
+                }
+                {
+                    let ret = elim.clone();
+                    let ret = ret.unfilter(&res_term.usages);
+                    return RawTm::stuck(ret);
+                }
             }
         }
 
-        let usages = Usages::merge_mut([&mut res_term.usages]);
+        let usages = Usages::merge_mut([&mut arg_name.usages, &mut res_term.usages]);
         
-        let weak = Intern::new(RawTmKind::Func { res_term });
+        let weak = Intern::new(RawTmKind::Func { arg_name, res_term });
         Weaken { usages, weak }
     }
 
     pub(crate) fn var(ctx_len: usize, index: usize, var_ty: &RawTy<S>) -> RawTm<S> {
         debug_assert_eq!(index, var_ty.usages.len());
-        if let Some(mut eta_term) = var_ty.unique_eta_term_opt(&mut Vec::new()) {
+        if let Some(eta_term) = var_ty.unique_eta_term_opt(&mut Vec::new()) {
             debug_assert_eq!(eta_term.usages.len(), index);
-            eta_term.weaken(ctx_len.strict_sub(index));
-            return eta_term;
+            return eta_term.weaken(ctx_len.strict_sub(index));
         }
         Weaken {
             usages: Usages::single_one(ctx_len, index),
@@ -363,6 +392,7 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn case(
+        lhs_name: RawName<S>,
         elim: RawTm<S>,
         motive: RawScope<S, Intern<RawTyKind<S>>>,
         lhs_inhab: RawScope<S, Intern<RawTmKind<S>>>,
@@ -371,7 +401,7 @@ impl<S: Scheme> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::case(elim, motive, lhs_inhab, rhs_inhab))
+                RawTm::stuck(RawStuck::case(lhs_name, elim, motive, lhs_inhab, rhs_inhab))
             },
             RawTmKind::InjLhs { lhs_term } => {
                 let lhs_term = lhs_term.clone_unfilter(&elim.usages);
@@ -386,15 +416,17 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn proj_head(
+        head_name: RawName<S>,
         tail_ty: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawTm<S>,
     ) -> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::proj_head(tail_ty, elim))
+                RawTm::stuck(RawStuck::proj_head(head_name, tail_ty, elim))
             },
-            RawTmKind::Pair { head_term, tail_term: _ } => {
+            RawTmKind::Pair { head_name: term_head_name, head_term, tail_term: _ } => {
+                debug_assert_eq!(head_name, term_head_name.clone_unfilter(&elim.usages));
                 head_term.clone_unfilter(&elim.usages)
             },
             _ => unreachable!(),
@@ -402,15 +434,17 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn proj_tail(
+        head_name: RawName<S>,
         tail_ty: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawTm<S>,
     ) -> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::proj_tail(tail_ty, elim))
+                RawTm::stuck(RawStuck::proj_tail(head_name, tail_ty, elim))
             },
-            RawTmKind::Pair { head_term: _, tail_term } => {
+            RawTmKind::Pair { head_name: term_head_name, head_term: _, tail_term } => {
+                debug_assert_eq!(head_name, term_head_name.clone_unfilter(&elim.usages));
                 tail_term.clone_unfilter(&elim.usages)
             },
             _ => unreachable!(),
@@ -418,6 +452,7 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn app(
+        arg_name: RawName<S>,
         res_ty: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawTm<S>,
         arg_term: RawTm<S>,
@@ -425,9 +460,10 @@ impl<S: Scheme> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::app(res_ty, elim, arg_term))
+                RawTm::stuck(RawStuck::app(arg_name, res_ty, elim, arg_term))
             },
-            RawTmKind::Func { res_term } => {
+            RawTmKind::Func { arg_name: func_arg_name, res_term } => {
+                debug_assert_eq!(arg_name, func_arg_name.unfilter(&elim.usages));
                 let res_term = res_term.clone_unfilter(&elim.usages);
                 res_term.bind(&arg_term)
             },
@@ -463,18 +499,7 @@ impl<S: Scheme> RawTm<S> {
                 stuck.unfilter(&self.usages).is_unique_eta_term_for_type(ty)
             },
 
-            RawTmKind::Tagged { tag, inner_term } => {
-                let RawTyKind::Tagged { tag: ty_tag, inner_ty } = ty.weak.get_clone() else {
-                    return false;
-                };
-                if tag != ty_tag {
-                    return false;
-                }
-                let inner_term = Weaken { usages: self.usages.clone(), weak: inner_term };
-                let inner_ty = Weaken { usages: ty.usages.clone(), weak: inner_ty };
-                inner_term.is_unique_eta_term_for_type(&inner_ty)
-            },
-
+            RawTmKind::Tag { .. } |
             RawTmKind::Type { .. } |
             RawTmKind::Zero |
             RawTmKind::Succs { .. } |
@@ -488,10 +513,16 @@ impl<S: Scheme> RawTm<S> {
                 };
                 true
             },
-            RawTmKind::Pair { head_term, tail_term } => {
-                let RawTyKind::Sigma { tail_ty } = ty.weak.get_clone() else {
+
+            RawTmKind::Pair { head_name, head_term, tail_term } => {
+                let RawTyKind::Sigma {
+                    head_name: ty_head_name, tail_ty,
+                } = ty.weak.get_clone() else {
                     return false;
                 };
+                if head_name.unfilter(&self.usages) != ty_head_name.unfilter(&ty.usages) {
+                    return false;
+                }
                 if {
                     head_term
                     .unfilter(&self.usages)
@@ -513,59 +544,32 @@ impl<S: Scheme> RawTm<S> {
                     false
                 }
             },
-            RawTmKind::Func { res_term } => {
-                let RawTyKind::Pi { res_ty } = ty.weak.get_clone() else {
+
+            RawTmKind::Func { arg_name, res_term } => {
+                let RawTyKind::Pi { arg_name: ty_arg_name, res_ty } = ty.weak.get_clone() else {
                     return false;
                 };
-                let (res_term_inner, res_term_var_ty) = res_term.into_inner();
-                let (res_ty_inner, res_ty_var_ty) = res_ty.into_inner();
-                res_term_var_ty == res_ty_var_ty &&
-                res_term_inner.is_unique_eta_term_for_type(&res_ty_inner)
+
+                arg_name.unfilter(&self.usages) == ty_arg_name.unfilter(&ty.usages) 
+                && {
+                    let (res_term_inner, res_term_var_ty) = res_term.into_inner();
+                    let (res_ty_inner, res_ty_var_ty) = res_ty.into_inner();
+                    res_term_var_ty == res_ty_var_ty &&
+                    res_term_inner.is_unique_eta_term_for_type(&res_ty_inner)
+                }
             },
         }
     }
 
-    pub(crate) fn tagged_eq_tag_injective(
+    pub(crate) fn tags_apart(
         tag_0: S::Tag,
         tag_1: S::Tag,
-        untagged_ty_0: RawTy<S>,
-        untagged_ty_1: RawTy<S>,
         elim: RawTm<S>,
     ) -> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::tagged_eq_tag_injective(
-                    tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-                ))
-            },
-            RawTmKind::Refl => {
-                debug_assert_eq!(tag_0, tag_1);
-                debug_assert_eq!(untagged_ty_0, untagged_ty_1);
-                RawTm::unit(elim.usages.len())
-            },
-            _ => unreachable!(),
-        }
-    }
-
-    pub(crate) fn tagged_eq_inner_injective(
-        tag_0: S::Tag,
-        tag_1: S::Tag,
-        untagged_ty_0: RawTy<S>,
-        untagged_ty_1: RawTy<S>,
-        elim: RawTm<S>,
-    ) -> RawTm<S> {
-        match elim.weak.get_clone() {
-            RawTmKind::Stuck { stuck } => {
-                let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::tagged_eq_inner_injective(
-                    tag_0, tag_1, untagged_ty_0, untagged_ty_1, elim,
-                ))
-            },
-            RawTmKind::Refl => {
-                debug_assert_eq!(tag_0, tag_1);
-                debug_assert_eq!(untagged_ty_0, untagged_ty_1);
-                elim
+                RawTm::stuck(RawStuck::tags_apart(tag_0, tag_1, elim))
             },
             _ => unreachable!(),
         }
@@ -601,8 +605,7 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn equal_eq_eq_term_0_injective(
-        eq_ty_0: RawTy<S>,
-        eq_ty_1: RawTy<S>,
+        eq_ty: RawTy<S>,
         eq_term_0_0: RawTm<S>,
         eq_term_0_1: RawTm<S>,
         eq_term_1_0: RawTm<S>,
@@ -613,14 +616,13 @@ impl<S: Scheme> RawTm<S> {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
                 RawTm::stuck(RawStuck::equal_eq_eq_term_0_injective(
-                    eq_ty_0, eq_ty_1,
+                    eq_ty,
                     eq_term_0_0, eq_term_0_1,
                     eq_term_1_0, eq_term_1_1,
                     elim,
                 ))
             },
             RawTmKind::Refl => {
-                debug_assert_eq!(eq_ty_0, eq_ty_1);
                 debug_assert_eq!(eq_term_0_0, eq_term_0_1);
                 debug_assert_eq!(eq_term_1_0, eq_term_1_1);
                 elim
@@ -630,8 +632,7 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn equal_eq_eq_term_1_injective(
-        eq_ty_0: RawTy<S>,
-        eq_ty_1: RawTy<S>,
+        eq_ty: RawTy<S>,
         eq_term_0_0: RawTm<S>,
         eq_term_0_1: RawTm<S>,
         eq_term_1_0: RawTm<S>,
@@ -642,14 +643,13 @@ impl<S: Scheme> RawTm<S> {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
                 RawTm::stuck(RawStuck::equal_eq_eq_term_1_injective(
-                    eq_ty_0, eq_ty_1,
+                    eq_ty,
                     eq_term_0_0, eq_term_0_1,
                     eq_term_1_0, eq_term_1_1,
                     elim,
                 ))
             },
             RawTmKind::Refl => {
-                debug_assert_eq!(eq_ty_0, eq_ty_1);
                 debug_assert_eq!(eq_term_0_0, eq_term_0_1);
                 debug_assert_eq!(eq_term_1_0, eq_term_1_1);
                 elim
@@ -658,7 +658,9 @@ impl<S: Scheme> RawTm<S> {
         }
     }
 
-    pub(crate) fn sum_eq_lhs_injective(
+    pub(crate) fn sum_eq_name_injective(
+        lhs_name_0: RawName<S>,
+        lhs_name_1: RawName<S>,
         lhs_ty_0: RawTy<S>,
         lhs_ty_1: RawTy<S>,
         rhs_ty_0: RawTy<S>,
@@ -668,9 +670,38 @@ impl<S: Scheme> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::sum_eq_lhs_injective(lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim))
+                RawTm::stuck(RawStuck::sum_eq_name_injective(
+                    lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+                ))
             },
             RawTmKind::Refl => {
+                debug_assert_eq!(lhs_name_0, lhs_name_1);
+                debug_assert_eq!(lhs_ty_0, lhs_ty_1);
+                debug_assert_eq!(rhs_ty_0, rhs_ty_1);
+                elim
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn sum_eq_lhs_injective(
+        lhs_name_0: RawName<S>,
+        lhs_name_1: RawName<S>,
+        lhs_ty_0: RawTy<S>,
+        lhs_ty_1: RawTy<S>,
+        rhs_ty_0: RawTy<S>,
+        rhs_ty_1: RawTy<S>,
+        elim: RawTm<S>,
+    ) -> RawTm<S> {
+        match elim.weak.get_clone() {
+            RawTmKind::Stuck { stuck } => {
+                let elim = stuck.clone_unfilter(&elim.usages);
+                RawTm::stuck(RawStuck::sum_eq_lhs_injective(
+                    lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+                ))
+            },
+            RawTmKind::Refl => {
+                debug_assert_eq!(lhs_name_0, lhs_name_1);
                 debug_assert_eq!(lhs_ty_0, lhs_ty_1);
                 debug_assert_eq!(rhs_ty_0, rhs_ty_1);
                 elim
@@ -680,6 +711,8 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn sum_eq_rhs_injective(
+        lhs_name_0: RawName<S>,
+        lhs_name_1: RawName<S>,
         lhs_ty_0: RawTy<S>,
         lhs_ty_1: RawTy<S>,
         rhs_ty_0: RawTy<S>,
@@ -689,9 +722,12 @@ impl<S: Scheme> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::sum_eq_rhs_injective(lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim))
+                RawTm::stuck(RawStuck::sum_eq_rhs_injective(
+                    lhs_name_0, lhs_name_1, lhs_ty_0, lhs_ty_1, rhs_ty_0, rhs_ty_1, elim,
+                ))
             },
             RawTmKind::Refl => {
+                debug_assert_eq!(lhs_name_0, lhs_name_1);
                 debug_assert_eq!(lhs_ty_0, lhs_ty_1);
                 debug_assert_eq!(rhs_ty_0, rhs_ty_1);
                 elim
@@ -700,7 +736,9 @@ impl<S: Scheme> RawTm<S> {
         }
     }
 
-    pub(crate) fn sigma_eq_head_injective(
+    pub(crate) fn sigma_eq_name_injective(
+        head_name_0: RawName<S>,
+        head_name_1: RawName<S>,
         tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawTm<S>,
@@ -708,9 +746,35 @@ impl<S: Scheme> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::sigma_eq_head_injective(tail_ty_0, tail_ty_1, elim))
+                RawTm::stuck(RawStuck::sigma_eq_name_injective(
+                    head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+                ))
             },
             RawTmKind::Refl => {
+                debug_assert_eq!(head_name_0, head_name_1);
+                debug_assert_eq!(tail_ty_0, tail_ty_1);
+                elim
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn sigma_eq_head_injective(
+        head_name_0: RawName<S>,
+        head_name_1: RawName<S>,
+        tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
+        tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
+        elim: RawTm<S>,
+    ) -> RawTm<S> {
+        match elim.weak.get_clone() {
+            RawTmKind::Stuck { stuck } => {
+                let elim = stuck.clone_unfilter(&elim.usages);
+                RawTm::stuck(RawStuck::sigma_eq_head_injective(
+                    head_name_0, head_name_1, tail_ty_0, tail_ty_1, elim,
+                ))
+            },
+            RawTmKind::Refl => {
+                debug_assert_eq!(head_name_0, head_name_1);
                 debug_assert_eq!(tail_ty_0, tail_ty_1);
                 elim
             },
@@ -719,6 +783,7 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn sigma_eq_tail_injective(
+        head_name: RawName<S>,
         tail_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         tail_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawTm<S>,
@@ -726,7 +791,12 @@ impl<S: Scheme> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::sigma_eq_tail_injective(tail_ty_0, tail_ty_1, elim))
+                RawTm::stuck(RawStuck::sigma_eq_tail_injective(
+                    head_name,
+                    tail_ty_0,
+                    tail_ty_1,
+                    elim,
+                ))
             },
             RawTmKind::Refl => {
                 debug_assert_eq!(tail_ty_0, tail_ty_1);
@@ -736,7 +806,9 @@ impl<S: Scheme> RawTm<S> {
         }
     }
 
-    pub(crate) fn pi_eq_arg_injective(
+    pub(crate) fn pi_eq_name_injective(
+        arg_name_0: RawName<S>,
+        arg_name_1: RawName<S>,
         res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawTm<S>,
@@ -744,9 +816,35 @@ impl<S: Scheme> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::pi_eq_arg_injective(res_ty_0, res_ty_1, elim))
+                RawTm::stuck(RawStuck::pi_eq_name_injective(
+                    arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+                ))
             },
             RawTmKind::Refl => {
+                debug_assert_eq!(arg_name_0, arg_name_1);
+                debug_assert_eq!(res_ty_0, res_ty_1);
+                elim
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn pi_eq_arg_injective(
+        arg_name_0: RawName<S>,
+        arg_name_1: RawName<S>,
+        res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
+        res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
+        elim: RawTm<S>,
+    ) -> RawTm<S> {
+        match elim.weak.get_clone() {
+            RawTmKind::Stuck { stuck } => {
+                let elim = stuck.clone_unfilter(&elim.usages);
+                RawTm::stuck(RawStuck::pi_eq_arg_injective(
+                    arg_name_0, arg_name_1, res_ty_0, res_ty_1, elim,
+                ))
+            },
+            RawTmKind::Refl => {
+                debug_assert_eq!(arg_name_0, arg_name_1);
                 debug_assert_eq!(res_ty_0, res_ty_1);
                 elim
             },
@@ -755,6 +853,7 @@ impl<S: Scheme> RawTm<S> {
     }
 
     pub(crate) fn pi_eq_res_injective(
+        arg_name: RawName<S>,
         res_ty_0: RawScope<S, Intern<RawTyKind<S>>>,
         res_ty_1: RawScope<S, Intern<RawTyKind<S>>>,
         elim: RawTm<S>,
@@ -762,7 +861,12 @@ impl<S: Scheme> RawTm<S> {
         match elim.weak.get_clone() {
             RawTmKind::Stuck { stuck } => {
                 let elim = stuck.clone_unfilter(&elim.usages);
-                RawTm::stuck(RawStuck::pi_eq_res_injective(res_ty_0, res_ty_1, elim))
+                RawTm::stuck(RawStuck::pi_eq_res_injective(
+                    arg_name,
+                    res_ty_0,
+                    res_ty_1, 
+                    elim, 
+                ))
             },
             RawTmKind::Refl => {
                 debug_assert_eq!(res_ty_0, res_ty_1);
@@ -780,6 +884,10 @@ impl<S: Scheme> RawTmKind<S> {
         })
     }
 
+    pub(crate) fn tag(tag: S::Tag) -> Intern<RawTmKind<S>> {
+        Intern::new(RawTmKind::Tag { tag })
+    }
+
     pub(crate) fn zero() -> Intern<RawTmKind<S>> {
         Intern::new(RawTmKind::Zero)
     }
@@ -791,84 +899,8 @@ impl<S: Scheme> RawTmKind<S> {
     pub(crate) fn unit() -> Intern<RawTmKind<S>> {
         Intern::new(RawTmKind::Unit)
     }
-
-    /*
-    fn map_scheme<V: Scheme>(
-        &self,
-        map_user_ty: &mut impl FnMut(&S::UserTy) -> V::UserTy,
-        map_user_term: &mut impl FnMut(&S::UserTm) -> V::UserTm,
-    ) -> RawTmKind<V> {
-        match self {
-            RawTmKind::Stuck { stuck } => {
-                let stuck = stuck.map_scheme(map_user_ty, map_user_term);
-                RawTmKind::Stuck { stuck }
-            },
-            RawTmKind::User { user_term } => {
-                let user_ty_0 = S::user_ty_of(user_term);
-                let user_term = map_user_term(user_term);
-                let user_ty_1 = V::user_ty_of(&user_term);
-                assert_eq!(map_user_ty(&user_ty_0), user_ty_1);
-                RawTmKind::User { user_term }
-            },
-            RawTmKind::Type { ty } => {
-                let ty = ty.map_scheme(map_user_ty, map_user_term);
-                RawTmKind::Type { ty }
-            },
-            RawTmKind::Zero => RawTmKind::Zero,
-            RawTmKind::Succs { count, pred_term } => {
-                let count = count.clone();
-                let pred_term = pred_term.map_scheme(map_user_ty, map_user_term);
-                RawTmKind::Succs { count, pred_term }
-            },
-            RawTmKind::Refl => RawTmKind::Refl,
-            RawTmKind::Unit => RawTmKind::Unit,
-            RawTmKind::InjLhs { lhs_term } => {
-                let lhs_term = lhs_term.map_scheme(map_user_ty, map_user_term);
-                RawTmKind::InjLhs { lhs_term }
-            },
-            RawTmKind::InjRhs { rhs_term } => {
-                let rhs_term = rhs_term.map_scheme(map_user_ty, map_user_term);
-                RawTmKind::InjRhs { rhs_term }
-            },
-            RawTmKind::Pair { head_term, tail_term } => {
-                let head_term = head_term.map_scheme(map_user_ty, map_user_term);
-                let tail_term = tail_term.map_scheme(map_user_ty, map_user_term);
-                RawTmKind::Pair { head_term, tail_term }
-            },
-            RawTmKind::Func { res_term } => {
-                let res_term = res_term.map_scheme(map_user_ty, map_user_term);
-                RawTmKind::Func { res_term }
-            }
-        }
-    }
-    */
 }
 
-/*
-impl<S: Scheme> Substitute<S> for RawTm<S> {
-    type RawSubstOutput = RawTm<S>;
-
-    fn to_subst_output(&self) -> RawTm<S> {
-        self.clone()
-    }
-
-    fn subst(&self, filter: &Usages, var_term: &RawTm<S>) -> RawTm<S> {
-        match self.usages.subst(filter, var_term) {
-            ControlFlow::Break(usages) => {
-                RawTm {
-                    usages,
-                    kind: self.weak.clone(),
-                }
-            },
-            ControlFlow::Continue((unfilter, sub_filter, var_term)) => {
-                let mut ret = self.weak.subst(&sub_filter, var_term);
-                ret.usages.unfilter(&unfilter);
-                ret
-            },
-        }
-    }
-}
-*/
 
 impl<S: Scheme> Substitute<S> for Intern<RawTmKind<S>> {
     type RawSubstOutput = Intern<RawTmKind<S>>;
@@ -882,9 +914,8 @@ impl<S: Scheme> Substitute<S> for Intern<RawTmKind<S>> {
             RawTmKind::Stuck { stuck } => {
                 stuck.subst(filter, &var_term)
             },
-            RawTmKind::Tagged { tag, inner_term } => {
-                let inner_term = inner_term.subst(filter, var_term);
-                RawTm::tagged(tag, inner_term)
+            RawTmKind::Tag { tag } => {
+                RawTm::tag(filter.len(), tag)
             },
             RawTmKind::Type { ty } => {
                 let ty = ty.subst(filter, &var_term);
@@ -905,14 +936,16 @@ impl<S: Scheme> Substitute<S> for Intern<RawTmKind<S>> {
                 let rhs_term = rhs_term.subst(filter, &var_term);
                 RawTm::inj_rhs(rhs_term)
             },
-            RawTmKind::Pair { head_term, tail_term } => {
+            RawTmKind::Pair { head_name, head_term, tail_term } => {
+                let head_name = head_name.subst(filter, &var_term);
                 let head_term = head_term.subst(filter, &var_term);
                 let tail_term = tail_term.subst(filter, &var_term);
-                RawTm::pair(head_term, tail_term)
+                RawTm::pair(head_name, head_term, tail_term)
             },
-            RawTmKind::Func { res_term } => {
+            RawTmKind::Func { arg_name, res_term } => {
+                let arg_name = arg_name.subst(filter, &var_term);
                 let res_term = res_term.subst(filter, &var_term);
-                RawTm::func(res_term)
+                RawTm::func(arg_name, res_term)
             },
         }
     }
@@ -920,7 +953,7 @@ impl<S: Scheme> Substitute<S> for Intern<RawTmKind<S>> {
     fn eliminates_var(&self, index: usize) -> bool {
         match self.get_clone() {
             RawTmKind::Stuck { stuck } => stuck.eliminates_var(index),
-            RawTmKind::Tagged { tag: _, inner_term } => inner_term.eliminates_var(index),
+            RawTmKind::Tag { .. } => false,
             RawTmKind::Type { ty } => ty.eliminates_var(index),
             RawTmKind::Zero => false,
             RawTmKind::Succs { count: _, pred_term } => pred_term.eliminates_var(index),
@@ -928,11 +961,55 @@ impl<S: Scheme> Substitute<S> for Intern<RawTmKind<S>> {
             RawTmKind::Unit => false,
             RawTmKind::InjLhs { lhs_term } => lhs_term.eliminates_var(index),
             RawTmKind::InjRhs { rhs_term } => rhs_term.eliminates_var(index),
-            RawTmKind::Pair { head_term, tail_term } => {
+            RawTmKind::Pair { head_name, head_term, tail_term } => {
+                head_name.eliminates_var(index) ||
                 head_term.eliminates_var(index) ||
                 tail_term.eliminates_var(index)
             },
-            RawTmKind::Func { res_term } => res_term.eliminates_var(index),
+            RawTmKind::Func { arg_name, res_term } => {
+                arg_name.eliminates_var(index) &&
+                res_term.eliminates_var(index)
+            },
+        }
+    }
+
+    fn contains_subterm(&self, subterm: RawTm<S>) -> bool {
+        if self.get_index() < subterm.weak.get_index() {
+            return false;
+        }
+        if subterm.usages.is_ones() && self.get_index() == subterm.weak.get_index() {
+            return true;
+        }
+        match self.get_clone() {
+            RawTmKind::Stuck { stuck } => {
+                stuck.contains_subterm(&subterm)
+            },
+            RawTmKind::Type { ty } => {
+                ty.contains_subterm(&subterm)
+            },
+            RawTmKind::Succs { pred_term, .. } => {
+                pred_term.contains_subterm(&subterm)
+            },
+            RawTmKind::InjLhs { lhs_term } => {
+                lhs_term.contains_subterm(&subterm)
+            },
+            RawTmKind::InjRhs { rhs_term } => {
+                rhs_term.contains_subterm(&subterm)
+            },
+            RawTmKind::Pair { head_name, head_term, tail_term } => {
+                head_name.contains_subterm(&subterm) ||
+                head_term.contains_subterm(&subterm) ||
+                tail_term.contains_subterm(&subterm)
+            },
+            RawTmKind::Func { arg_name, res_term } => {
+                arg_name.contains_subterm(&subterm) ||
+                res_term.contains_subterm(&subterm)
+            },
+
+            RawTmKind::Tag { .. } |
+            RawTmKind::Zero |
+            RawTmKind::Refl |
+            RawTmKind::Unit => false,
         }
     }
 }

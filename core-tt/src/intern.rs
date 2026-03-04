@@ -4,6 +4,7 @@ pub struct Interner<S: Scheme> {
     tys: RwLock<IndexSet<RawTyKind<S>>>,
     terms: RwLock<IndexSet<RawTmKind<S>>>,
     stucks: RwLock<IndexSet<RawStuckKind<S>>>,
+    stuck_subst_cache: RwLock<hashbrown::HashMap<StuckSubstArgs<S>, RawTm<S>>>,
 }
 
 pub struct Intern<T> {
@@ -17,13 +18,60 @@ pub trait Internable {
     fn insert(self, interner: &Interner<Self::Scheme>) -> usize;
 }
 
+#[derive_where(PartialEq, Eq, Hash)]
+struct StuckSubstArgs<S: Scheme> {
+    stuck: Intern<RawStuckKind<S>>,
+    filter: Usages,
+    var_term: RawTm<S>,
+}
+
+#[derive_where(PartialEq, Eq, Hash)]
+struct StuckSubstArgsRef<'a, S: Scheme> {
+    stuck: Intern<RawStuckKind<S>>,
+    filter: &'a Usages,
+    var_term: &'a RawTm<S>,
+}
+
+impl<'a, S: Scheme> hashbrown::Equivalent<StuckSubstArgs<S>> for StuckSubstArgsRef<'a, S> {
+    fn equivalent(&self, key: &StuckSubstArgs<S>) -> bool {
+        self.stuck == key.stuck
+        && self.var_term == &key.var_term
+        && self.filter == &key.filter
+    }
+}
+
 impl<S: Scheme> Interner<S> {
     pub fn new() -> Interner<S> {
         Interner {
             tys: RwLock::new(IndexSet::new()),
             terms: RwLock::new(IndexSet::new()),
             stucks: RwLock::new(IndexSet::new()),
+            stuck_subst_cache: RwLock::new(hashbrown::HashMap::new()),
         }
+    }
+
+    pub(crate) fn check_stuck_subst_cache(
+        &self,
+        stuck: Intern<RawStuckKind<S>>,
+        filter: &Usages,
+        var_term: &RawTm<S>,
+    ) -> Option<RawTm<S>> {
+        let subst_args = StuckSubstArgsRef { stuck, filter, var_term };
+        let cache = self.stuck_subst_cache.read().unwrap();
+        let output = cache.get(&subst_args)?;
+        Some(output.clone())
+    }
+
+    pub(crate) fn insert_stuck_subst_cache(
+        &self,
+        stuck: Intern<RawStuckKind<S>>,
+        filter: Usages,
+        var_term: RawTm<S>,
+        output: RawTm<S>,
+    ) {
+        let subst_args = StuckSubstArgs { stuck, filter, var_term };
+        let mut cache = self.stuck_subst_cache.write().unwrap();
+        cache.insert(subst_args, output);
     }
 }
 
@@ -43,6 +91,10 @@ impl<S: Scheme, T: Internable<Scheme = S>> Intern<T> {
     {
         let interner = S::interner();
         T::retrieve_clone(interner, self.index)
+    }
+
+    pub fn get_index(&self) -> usize {
+        self.index
     }
 }
 
