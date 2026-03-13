@@ -17,8 +17,8 @@ path = ".."
 features = ["arbitrary"]
 
 [[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
+name = "create_and_sanity_check_term"
+path = "fuzz_targets/create_and_sanity_check_term.rs"
 test = false
 doc = false
 bench = false
