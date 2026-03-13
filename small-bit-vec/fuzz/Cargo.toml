@@ -15,8 +15,8 @@ arbitrary = { version = "1", features = ["derive"] }
 path = ".."
 
 [[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
+name = "fuzz_small_bit_vec"
+path = "fuzz_targets/fuzz_small_bit_vec.rs"
 test = false
 doc = false
 bench = false

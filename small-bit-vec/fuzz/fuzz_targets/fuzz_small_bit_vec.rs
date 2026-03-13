@@ -48,9 +48,15 @@ enum Method {
     Remove {
         index: usize,
     },
+    Retain {
+        bit_mask: Vec<bool>,
+    },
     ShrinkToFit,
     Reserve {
         additional: usize,
+    },
+    GatherBits {
+        bit_mask: Vec<bool>,
     },
     Clone,
     PartialEq,
@@ -154,14 +160,18 @@ impl Method {
                 }
             },
             Method::Get { index } => {
-                if let Some((bvec, svec)) = vecs.last() && let Some(index) = index.checked_rem(bvec.len()) {
+                if let Some((bvec, svec)) = vecs.last()
+                && let Some(index) = index.checked_rem(bvec.len())
+                {
                     let v0 = bvec.get(index);
                     let v1 = svec.get(index).copied();
                     assert_eq!(v0, v1);
                 }
             },
             Method::Set { index, bit } => {
-                if let Some((bvec, svec)) = vecs.last_mut() && let Some(index) = index.checked_rem(bvec.len()) {
+                if let Some((bvec, svec)) = vecs.last_mut()
+                && let Some(index) = index.checked_rem(bvec.len())
+                {
                     bvec.set(index, *bit);
                     svec[index] = *bit;
                 }
@@ -200,16 +210,38 @@ impl Method {
                 }
             },
             Method::Insert { index, bit } => {
-                if let Some((bvec, svec)) = vecs.last_mut() && let Some(index) = index.checked_rem(bvec.len()) {
+                if let Some((bvec, svec)) = vecs.last_mut()
+                && let Some(index) = index.checked_rem(bvec.len())
+                {
                     bvec.insert(index, *bit);
                     svec.insert(index, *bit);
                 }
             },
             Method::Remove { index } => {
-                if let Some((bvec, svec)) = vecs.last_mut() && let Some(index) = index.checked_rem(bvec.len()) {
+                if let Some((bvec, svec)) = vecs.last_mut()
+                && let Some(index) = index.checked_rem(bvec.len())
+                {
                     let v0 = bvec.remove(index);
                     let v1 = svec.remove(index);
                     assert_eq!(v0, v1);
+                }
+            },
+            Method::Retain { bit_mask } => {
+                if let Some((bvec, svec)) = vecs.last_mut() {
+                    let mut iter = bit_mask.iter().copied();
+                    bvec.retain(|bit| {
+                        iter
+                        .next()
+                        .map(|mask| bit ^ mask)
+                        .unwrap_or(true)
+                    });
+                    let mut iter = bit_mask.iter().copied();
+                    svec.retain(|bit| {
+                        iter
+                        .next()
+                        .map(|mask| bit ^ mask)
+                        .unwrap_or(true)
+                    });
                 }
             },
             Method::ShrinkToFit => {
@@ -221,6 +253,19 @@ impl Method {
                 if let Some((bvec, _svec)) = vecs.last_mut() {
                     let additional = additional % 0x100_000;
                     bvec.reserve(additional);
+                }
+            },
+            Method::GatherBits { bit_mask } => {
+                if let Some((bvec, svec)) = vecs.last_mut()
+                && bit_mask.len() <= bvec.len()
+                {
+                    let bmask = bit_mask.iter().copied().collect();
+                    bvec.gather_bits(&bmask);
+
+                    let mut iter = bit_mask.iter().copied();
+                    svec.retain(|_| {
+                        iter.next().unwrap_or(true)
+                    });
                 }
             },
             Method::Clone => {
