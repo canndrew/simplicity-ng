@@ -12,10 +12,10 @@ This is the working bits of the SimplicityNG compiler. The crates are:
   A plethora of utilities for core-tt. Seperate from core-tt so that it can
   rely purely on core-tt's high-level (correctness-enforcing) API.
 
-* inference
+* elaborator
 
-  A type inference engine. Can be used to create core-tt terms with holes for
-  terms/types to be inferred and then tries to infer them.
+  Elaborates syntax parsed by `parser` into `core-tt` terms and performs
+  type-inference on them.
 
 * debug
 
