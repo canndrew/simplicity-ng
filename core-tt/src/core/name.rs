@@ -1,5 +1,13 @@
 use crate::priv_prelude::*;
 
+/// Type representing a name.
+///
+/// Names are used for tagging parts of the AST and for creating nominal types. [TyKind::Sum]
+/// types, [TyKind::Sigma] types and [TyKind::Pi] types are all parameterized by a [Name] and are
+/// considered different types if the names differ. Constant names wrap a [Scheme::Tag]. There is
+/// also a type of names - [TyKind::Name] - used for metaprogramming and writing name-generic code.
+/// Any `Name` is either a constant (ie. a [Scheme::Tag]) or a [Stuck] computation evaluating to a
+/// term of type [TyKind::Name].
 #[derive_where(Clone)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Name<S: Scheme> {
@@ -16,9 +24,11 @@ impl<S: Scheme> PartialEq for Name<S> {
 
 #[derive_where(Clone, Debug)]
 pub enum NameKind<S: Scheme> {
+    /// A stuck computation which computes a name. For instance a variable of type [TyKind::Name].
     Stuck {
         stuck: Stuck<S>,
     },
+    /// A constant name, the type of which is determined by the [Scheme].
     Tag {
         tag: S::Tag,
     },
@@ -55,6 +65,7 @@ impl<S: Scheme> Contextual<S> for Name<S> {
 }
 
 impl<S: Scheme> Name<S> {
+    /// Get the [NameKind] representation of `self` in order to pattern-match on it.
     pub fn kind(&self) -> NameKind<S> {
         let Name { raw_ctx, raw_name } = self;
         match &raw_name.weak {
@@ -74,6 +85,7 @@ impl<S: Scheme> Name<S> {
         }
     }
 
+    /// Convert `self` to a `Tm` of type `TyKind::Name`.
     pub fn to_term(&self) -> Tm<S> {
         let Name { raw_ctx, raw_name } = self;
         let raw_ty = RawTy::name(raw_name.usages.len());

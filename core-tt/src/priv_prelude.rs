@@ -41,10 +41,10 @@ pub(crate) use {
 };
 
 #[cfg(feature = "arbitrary")]
-pub(crate) use {
-    arbitrary::{Arbitrary, Unstructured},
-    crate::core::{TyKind, TmKind},
-};
+pub(crate) use arbitrary::{Arbitrary, Unstructured};
+
+#[cfg(any(doc, feature = "arbitrary"))]
+pub(crate) use crate::core::{TyKind, TmKind};
 
 #[cfg(feature = "pretty-formatting")]
 pub(crate) use std::cell::Cell;

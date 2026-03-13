@@ -1,5 +1,6 @@
 use crate::priv_prelude::*;
 
+/// Represents an arbitrary of term under a context and with a type.
 #[derive_where(Clone)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Tm<S: Scheme> {
@@ -87,6 +88,7 @@ impl<S: Scheme> Contextual<S> for Tm<S> {
 }
 
 impl<S: Scheme> Tm<S> {
+    /// Get the context of `self`.
     pub fn ctx(&self) -> Ctx<S> {
         Ctx {
             raw_ctx: self.raw_ctx.clone(),
@@ -103,6 +105,7 @@ impl<S: Scheme> Tm<S> {
         usages
     }
 
+    /// Get the type of `self`.
     pub fn ty(&self) -> Ty<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, _) = raw_typed_term.to_parts();
@@ -112,6 +115,7 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Get the `TmKind` representation of `self` for pattern-matching on.
     pub fn kind(&self) -> TmKind<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -272,10 +276,16 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Checks whether `self` refers to the variable at `index`.
     pub fn contains_var(&self, index: usize) -> bool {
         self.raw_typed_term.usages[index]
     }
 
+    /// Adds `count` to the natural number represented by self.
+    ///
+    /// # Panics
+    ///
+    /// If the type of self is not [TyKind::Nat].
     pub fn succs(&self, count: impl Into<BigUint>) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
@@ -299,6 +309,11 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Returns the maximum of `self` and `rhs`, assuming both terms have type [TyKind::Nat].
+    ///
+    /// # Panics
+    ///
+    /// If the type of either `self` or `rhs` is not [TyKind::Nat].
     pub fn max(&self, rhs: &Tm<S>) -> Tm<S> {
         let (Ctx { raw_ctx }, (lhs_term, rhs_term)) = merge_ctxs((self, rhs));
 
@@ -327,6 +342,11 @@ impl<S: Scheme> Tm<S> {
         Tm { raw_ctx, raw_typed_term }
     }
 
+    /// Returns the sum of `self` and `rhs`, assuming both terms have type [TyKind::Nat].
+    ///
+    /// # Panics
+    ///
+    /// If the type of either `self` or `rhs` is not [TyKind::Nat].
     pub fn add(&self, rhs: &Tm<S>) -> Tm<S> {
         let (Ctx { raw_ctx }, (lhs_term, rhs_term)) = merge_ctxs((self, rhs));
 
@@ -355,6 +375,11 @@ impl<S: Scheme> Tm<S> {
         Tm { raw_ctx, raw_typed_term }
     }
 
+    /// Returns the product of `self` and `rhs`, assuming both terms have type [TyKind::Nat].
+    ///
+    /// # Panics
+    ///
+    /// If the type of either `self` or `rhs` is not [TyKind::Nat].
     pub fn mul(&self, rhs: &Tm<S>) -> Tm<S> {
         let (Ctx { raw_ctx }, (lhs_term, rhs_term)) = merge_ctxs((self, rhs));
 
@@ -383,6 +408,13 @@ impl<S: Scheme> Tm<S> {
         Tm { raw_ctx, raw_typed_term }
     }
 
+    /// Returns the type representing the proposition that `self` equals `other`.
+    ///
+    /// Both `self` and `other` must have the same type.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` and `other` do not match.
     pub fn equals(&self, other: &Tm<S>) -> Ty<S> {
         let eq_term_0 = self;
         let eq_term_1 = other;
@@ -406,6 +438,7 @@ impl<S: Scheme> Tm<S> {
         Ty { raw_ctx: ctx.raw_ctx, raw_ty }
     }
 
+    /// Returns reflexivity proof of self. ie. the unique value of type `self.equals(self)`.
     pub fn refl(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -420,6 +453,7 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Left-injects `self` into the type `self.ty().sum(lhs_name, rhs_ty)`.
     pub fn inj_lhs(&self, lhs_name: &Name<S>, rhs_ty: &Ty<S>) -> Tm<S> {
         let lhs_term = self;
         
@@ -431,6 +465,7 @@ impl<S: Scheme> Tm<S> {
         Tm { raw_ctx: ctx.raw_ctx, raw_typed_term: term }
     }
 
+    /// Right-injects `self` into the type `lhs_ty.sum(lhs_name, &self.ty())`.
     pub fn inj_rhs(&self, lhs_name: &Name<S>, lhs_ty: &Ty<S>) -> Tm<S> {
         let rhs_term = self;
         
@@ -442,6 +477,12 @@ impl<S: Scheme> Tm<S> {
         Tm { raw_ctx: ctx.raw_ctx, raw_typed_term: term }
     }
 
+    /// Pairs `self` with `tail_term` to create a term of type
+    /// `self.ty().sigma(head_name, tail_ty)`.
+    ///
+    /// # Panics
+    ///
+    /// If `tail_term.ty()` does not match `tail_ty(self)`.
     pub fn pair(
         &self,
         head_name: &Name<S>,
@@ -488,6 +529,11 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Converts `self` to a [Name], assuming `self` has type [TyKind::Name].
+    ///
+    /// # Panics
+    ///
+    /// If `self.ty()` is not [TyKind::Name].
     pub fn to_name(&self) -> Name<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
@@ -501,6 +547,11 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Converts `self` to a [Ty], assuming `self` has type [TyKind::Universe].
+    ///
+    /// # Panics
+    ///
+    /// If `self.ty()` is not [TyKind::Universe].
     pub fn to_ty(&self) -> Ty<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
@@ -514,6 +565,13 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Converts a function into a scoped [Tm].
+    ///
+    /// This is the inverse of [Scope::to_func].
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` is not a [TyKind::Pi] type.
     pub fn to_scope(&self) -> Scope<S, Tm<S>> {
         let ty = self.ty();
         let RawTyKind::Pi { arg_name: _, res_ty } = ty.raw_ty.weak.get_clone() else {
@@ -532,6 +590,23 @@ impl<S: Scheme> Tm<S> {
         arg_ty.scope(|arg_term| self.app(&arg_term))
     }
 
+    /// Assuming `self` has type [TyKind::Nat], loop `self` times to compute a term of type
+    /// `motive(self)`.
+    ///
+    /// When `self` is zero, returns `zero_inhab`.
+    /// When `self` is `val.succs(1)` returns `succ_inhab(val, val.for_loop(motive, zero_inhab,
+    /// succ_inhab))`.
+    ///
+    /// The terms passed to `succ_inhab` are a natural number `n` and a term of type `motive(n)`.
+    ///
+    /// # Panics
+    ///
+    /// If any of the following conditions fail to hold:
+    ///
+    /// * `self` must have type [TyKind::Nat].
+    /// * `zero_inhab` must have type `motive(self.ctx().zero())`.
+    /// * `succ_inhab(n, state)` must have type `motive(n.succs(1))` where `n` has type
+    /// [TyKind::Nat] and `state` has type `motive(n)`.
     pub fn for_loop(
         &self,
         motive: impl FnOnce(Tm<S>) -> Ty<S>,
@@ -590,6 +665,20 @@ impl<S: Scheme> Tm<S> {
         Tm { raw_ctx, raw_typed_term }
     }
 
+    /// Pattern-match on an equality term. ie. the J-axiom of dependent type theory.
+    ///
+    /// Assuming `self` has type `x.equals(y)` (for some `x` and `y`) returns a `Tm` of type
+    /// `motive(x, y, self)`.
+    ///
+    /// When `self` is `x.refl()` returns `inhab(x)`.
+    ///
+    /// # Panics
+    ///
+    /// If either of the following conditions fail to hold:
+    ///
+    /// * `self` must have type `x.equals(y)` for some `x` and `y`.
+    /// * `inhab(z)` must have type `motive(z, z, z.refl())` for any `z` of the same type as `x`
+    /// and `y`.
     pub fn cong(
         &self,
         motive: impl FnOnce(Tm<S>, Tm<S>, Tm<S>) -> Ty<S>,
@@ -671,6 +760,19 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Pattern-match on a reflexive equality term. ie. the K-axiom of dependent type theory.
+    ///
+    /// Assuming `self` has type `x.equals(x)` (for some `x`) returns a `Tm` of type
+    /// `motive(x, x, self)`.
+    ///
+    /// When `self` is `x.refl()` returns `inhab(x)`.
+    ///
+    /// # Panics
+    ///
+    /// If either of the following conditions fail to hold:
+    ///
+    /// * `self` must have type `x.equals(x)` for some `x`.
+    /// * `inhab(z)` must have type `motive(z, z, z.refl())` for any `z` of the same type as `x`.
     pub fn unique_identity(
         &self,
         motive: impl FnOnce(Tm<S>, Tm<S>) -> Ty<S>,
@@ -733,6 +835,13 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Ex falso quodlibet. Pattern match on a term of type [TyKind::Never]. 
+    ///
+    /// Returns a term of type `motive(self)`.
+    ///
+    /// # Panics
+    ///
+    /// If `self.ty()` is not [TyKind::Never].
     pub fn explode(
         &self, 
         motive: impl FnOnce(Tm<S>) -> Ty<S>,
@@ -761,6 +870,24 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Case match on a sum term.
+    ///
+    /// `self` must have type `lhs_ty.sum(lhs_name, rhs_ty)` for some types `lhs_ty` and `rhs_ty`,
+    /// and some name `lhs_name`. Returns a term of type `motive(self)`.
+    ///
+    /// Returns `lhs_inhab(lhs)` when self is `lhs.inj_lhs(lhs_name, rhs_ty)` for some `lhs`.
+    /// Returns `rhs_inhab(rhs)` when self is `rhs.inj_rhs(lhs_name, lhs_ty)` for some `rhs`.
+    ///
+    /// # Panics
+    ///
+    /// If any of the following conditions fail to hold:
+    ///
+    /// * `self` must have type `lhs_ty.sum(lhs_name, rhs_ty)` for some type `lhs_ty` and `rhs_ty`
+    /// and some name `lhs_name`.
+    /// * `lhs_inhab(lhs)` must have type `motive(lhs.inj_lhs(lhs_name, rhs_ty))` for all `lhs` of
+    /// type `lhs_ty`.
+    /// * `rhs_inhab(rhs)` must have type `motive(rhs.inj_rhs(lhs_name, lhs_ty))` for all `rhs` of
+    /// type `rhs_ty`.
     pub fn case(
         &self,
         motive: impl FnOnce(Tm<S>) -> Ty<S>,
@@ -854,6 +981,14 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Project out the head element of a pair. ie. the first element of a 2-tuple.
+    ///
+    /// Returns a term of type `head_ty` assuming the type of `self` is `head_ty.sigma(head_name,
+    /// tail_ty)` for some type `head_ty`, some scoped type `tail_ty` and some name `head_name`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` is not a [TyKind::Sigma] type.
     pub fn proj_head(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
@@ -880,6 +1015,15 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Project out the tail element of a pair. ie. the second element of a 2-tuple.
+    ///
+    /// Returns a term of type `tail_ty(self.proj_head())` assuming the type of `self` is
+    /// `head_ty.sigma(head_name, tail_ty)` for some type `head_ty`, some scoped type `tail_ty` and
+    /// some name `head_name`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` is not a [TyKind::Sigma] type.
     pub fn proj_tail(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let (raw_ty, raw_term) = raw_typed_term.to_parts();
@@ -910,6 +1054,19 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Apply a function term.
+    ///
+    /// The type of `self` must be `arg_ty.pi(arg_name, res_ty)` for some type `arg_ty`, some
+    /// scoped type `res_ty` and some name `arg_name`.
+    ///
+    /// Returns a term of type `res_ty(arg_term)`.
+    ///
+    /// # Panics
+    ///
+    /// If either of the following conditions fail to hold:
+    ///
+    /// * The type of `self` must be a [TyKind::Pi] type.
+    /// * The type of `arg_term` must match the argument type of `self`.
     pub fn app(
         &self,
         arg_term: &Tm<S>,
@@ -957,6 +1114,14 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Convert an equality of unequal tags into a term of type [TyKind::Never].
+    ///
+    /// The type of self must be `self.ctx().tag(x).equals(&self.ctx().tag(y))` where `x` and `y`
+    /// are rust values of type [Scheme::Tag] and `x != y`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
     pub fn tags_apart(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -1001,6 +1166,33 @@ impl<S: Scheme> Tm<S> {
             raw_typed_term: term,
         }
     }
+
+    /// Type constructor injectivity for the endpoint type of equality types.
+    ///
+    /// Given the following:
+    /// * Two types: `eq_ty_0` and `eq_ty_1`.
+    /// * Two terms of type `eq_ty_0`: `eq_term_0_0` and `eq_term_1_0`.
+    /// * Two terms of type `eq_ty_1`: `eq_term_0_1` and `eq_term_1_1`.
+    ///
+    /// Then if `self` has type:
+    ///
+    /// `eq_term_0_0.equals(eq_term_1_0).to_term().equals(&eq_term_0_1.equals(eq_term_1_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type of proofs
+    ///
+    /// `eq_term_0_0.equals(eq_term_1_0)`
+    ///
+    /// Is equal to the type of proofs
+    ///
+    /// `eq_term_0_1.equals(eq_term_1_1)`
+    ///
+    /// Then this method returns a term of type `eq_ty_0.to_term().equals(&eq_ty_1.to_term())`
+    ///
+    /// ie. A proof that `eq_ty_0 == eq_ty_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
 
     pub fn equal_eq_eq_ty_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
@@ -1115,6 +1307,33 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Type constructor injectivity for the left (first) endpoint of equality types.
+    ///
+    /// Given the following:
+    /// * A type: `eq_ty`
+    /// * Four terms of type `eq_ty`: `eq_term_0_0`, `eq_term_1_0`, `eq_term_0_1` and
+    /// `eq_term_1_1`.
+    ///
+    /// Then if `self` has type:
+    ///
+    /// `eq_term_0_0.equals(eq_term_1_0).to_term().equals(&eq_term_0_1.equals(eq_term_1_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type of proofs
+    ///
+    /// `eq_term_0_0.equals(eq_term_1_0)`
+    ///
+    /// Is equal to the type of proofs
+    ///
+    /// `eq_term_0_1.equals(eq_term_1_1)`
+    ///
+    /// Then this method returns a term of type `eq_term_0_0.equals(eq_term_0_1)`.
+    ///
+    /// ie. A proof that the left-endpoints of the two equality proof types are equal.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
+
     pub fn equal_eq_eq_term_0_injective(
         &self,
     ) -> Tm<S> {
@@ -1225,6 +1444,34 @@ impl<S: Scheme> Tm<S> {
             raw_typed_term: term,
         }
     }
+
+
+    /// Type constructor injectivity for the right (second) endpoint of equality types.
+    ///
+    /// Given the following:
+    /// * A type: `eq_ty`
+    /// * Four terms of type `eq_ty`: `eq_term_0_0`, `eq_term_1_0`, `eq_term_0_1` and
+    /// `eq_term_1_1`.
+    ///
+    /// Then if `self` has type:
+    ///
+    /// `eq_term_0_0.equals(eq_term_1_0).to_term().equals(&eq_term_0_1.equals(eq_term_1_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type of proofs
+    ///
+    /// `eq_term_0_0.equals(eq_term_1_0)`
+    ///
+    /// Is equal to the type of proofs
+    ///
+    /// `eq_term_0_1.equals(eq_term_1_1)`
+    ///
+    /// Then this method returns a term of type `eq_term_1_0.equals(eq_term_1_1)`.
+    ///
+    /// ie. A proof that the right-endpoints of the two equality proof types are equal.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
 
     pub fn equal_eq_eq_term_1_injective(
         &self,
@@ -1337,6 +1584,34 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Type constructor injectivity for the `lhs_name` of sum types.
+    ///
+    /// Given the following:
+    /// * 4 types: `lhs_ty_0`, `rhs_ty_0`, `lhs_ty_1`, `rhs_ty_1`.
+    /// * 2 names: `lhs_name_0`, `lhs_name_1`.
+    ///
+    /// Then if `self` has the type:
+    ///
+    /// `lhs_ty_0.sum(lhs_name_0, rhs_ty_0).to_term().equals(&lhs_ty_1.sum(lhs_name_1, rhs_ty_1))`
+    ///
+    /// ie. `self` is a proof that the type
+    ///
+    /// `TyKind::Sum { lhs_name: lhs_name_0, lhs_ty: lhs_ty_0, rhs_ty: rhs_ty_0 }`
+    ///
+    /// equals the type
+    ///
+    /// `TyKind::Sum { lhs_name: lhs_name_1, lhs_ty: lhs_ty_1, rhs_ty: rhs_ty_1 }`
+    ///
+    /// then this method returns a value of type
+    ///
+    /// `lhs_name_0.to_term().equals(&lhs_name_1.to_term())`
+    ///
+    /// ie. a proof that `lhs_name_0 == lhs_name_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
+
     pub fn sum_eq_name_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -1433,6 +1708,34 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Type constructor injectivity for the `lhs_ty` of sum types.
+    ///
+    /// Given the following:
+    /// * 4 types: `lhs_ty_0`, `rhs_ty_0`, `lhs_ty_1`, `rhs_ty_1`.
+    /// * 2 names: `lhs_name_0`, `lhs_name_1`.
+    ///
+    /// Then if `self` has the type:
+    ///
+    /// `lhs_ty_0.sum(lhs_name_0, rhs_ty_0).to_term().equals(&lhs_ty_1.sum(lhs_name_1, rhs_ty_1))`
+    ///
+    /// ie. `self` is a proof that the type
+    ///
+    /// `TyKind::Sum { lhs_name: lhs_name_0, lhs_ty: lhs_ty_0, rhs_ty: rhs_ty_0 }`
+    ///
+    /// equals the type
+    ///
+    /// `TyKind::Sum { lhs_name: lhs_name_1, lhs_ty: lhs_ty_1, rhs_ty: rhs_ty_1 }`
+    ///
+    /// then this method returns a value of type
+    ///
+    /// `lhs_ty_0.to_term().equals(&lhs_ty_1.to_term())`
+    ///
+    /// ie. a proof that `lhs_ty_0 == lhs_ty_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
+
     pub fn sum_eq_lhs_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -1528,6 +1831,34 @@ impl<S: Scheme> Tm<S> {
             raw_typed_term: term,
         }
     }
+
+    /// Type constructor injectivity for the `rhs_ty` of sum types.
+    ///
+    /// Given the following:
+    /// * 4 types: `lhs_ty_0`, `rhs_ty_0`, `lhs_ty_1`, `rhs_ty_1`.
+    /// * 2 names: `lhs_name_0`, `lhs_name_1`.
+    ///
+    /// Then if `self` has the type:
+    ///
+    /// `lhs_ty_0.sum(lhs_name_0, rhs_ty_0).to_term().equals(&lhs_ty_1.sum(lhs_name_1, rhs_ty_1))`
+    ///
+    /// ie. `self` is a proof that the type
+    ///
+    /// `TyKind::Sum { lhs_name: lhs_name_0, lhs_ty: lhs_ty_0, rhs_ty: rhs_ty_0 }`
+    ///
+    /// equals the type
+    ///
+    /// `TyKind::Sum { lhs_name: lhs_name_1, lhs_ty: lhs_ty_1, rhs_ty: rhs_ty_1 }`
+    ///
+    /// then this method returns a value of type
+    ///
+    /// `rhs_ty_0.to_term().equals(&rhs_ty_1.to_term())`
+    ///
+    /// ie. a proof that `rhs_ty_0 == rhs_ty_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
 
     pub fn sum_eq_rhs_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
@@ -1629,6 +1960,37 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Type constructor injectivity for the `head_name` of sigma types.
+    ///
+    /// Given the following:
+    /// * Two names: `head_name_0` and `head_name_1`.
+    /// * Two types: `head_ty_0` and `head_ty_1`.
+    /// * A type scoped under a value of type `head_ty_0`: `tail_ty_0`.
+    /// * A type scoped under a value of type `head_ty_1`: `tail_ty_1`.
+    ///
+    /// Then if self has type:
+    ///
+    /// `head_ty_0.sigma(head_name_0, tail_ty_0).to_term().equals(&head_ty_1.sigma(head_name_1,
+    /// tail_ty_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type:
+    ///
+    /// `TyKind::Sigma { head_name: head_name_0, tail_ty: tail_ty_0 }`
+    ///
+    /// Equals the type:
+    ///
+    /// `TyKind::Sigma { head_name: head_name_1, tail_ty: tail_ty_1 }`
+    ///
+    /// Then this method returns a term of type:
+    ///
+    /// `head_name_0.to_term().equals(&head_name_1.to_term())`.
+    ///
+    /// ie. A proof that `head_name_0 == head_name_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
+
     pub fn sigma_eq_name_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -1699,6 +2061,37 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Type constructor injectivity for the `head_ty` of sigma types.
+    ///
+    /// Given the following:
+    /// * Two names: `head_name_0` and `head_name_1`.
+    /// * Two types: `head_ty_0` and `head_ty_1`.
+    /// * A type scoped under a value of type `head_ty_0`: `tail_ty_0`.
+    /// * A type scoped under a value of type `head_ty_1`: `tail_ty_1`.
+    ///
+    /// Then if self has type:
+    ///
+    /// `head_ty_0.sigma(head_name_0, tail_ty_0).to_term().equals(&head_ty_1.sigma(head_name_1,
+    /// tail_ty_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type:
+    ///
+    /// `TyKind::Sigma { head_name: head_name_0, tail_ty: tail_ty_0 }`
+    ///
+    /// Equals the type:
+    ///
+    /// `TyKind::Sigma { head_name: head_name_1, tail_ty: tail_ty_1 }`
+    ///
+    /// Then this method returns a term of type:
+    ///
+    /// `head_ty_0.to_term().equals(&head_ty_1.to_term())`.
+    ///
+    /// ie. A proof that `head_ty_0 == head_ty_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
+
     pub fn sigma_eq_head_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -1768,6 +2161,36 @@ impl<S: Scheme> Tm<S> {
             raw_typed_term: term,
         }
     }
+
+    /// Type constructor injectivity for the `tail_ty` of sigma types.
+    ///
+    /// Given the following:
+    /// * A name: `head_name`.
+    /// * A type: `head_ty`.
+    /// * Two types scoped under `head_ty`: `tail_ty_0` and `tail_ty_1`.
+    ///
+    /// Then if self has type:
+    ///
+    /// `head_ty.sigma(head_name, tail_ty_0).to_term().equals(&head_ty.sigma(head_name,
+    /// tail_ty_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type:
+    ///
+    /// `TyKind::Sigma { head_name, tail_ty: tail_ty_0 }`
+    ///
+    /// Equals the type:
+    ///
+    /// `TyKind::Sigma { head_name, tail_ty: tail_ty_1 }`
+    ///
+    /// Then this method returns a term of type:
+    ///
+    /// `head_ty.func(head_name, tail_ty_0).equals(&head_ty.func(head_name, tail_ty_1))`.
+    ///
+    /// ie. A proof that `tail_ty_0 == tail_ty_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
 
     pub fn sigma_eq_tail_injective(
         &self,
@@ -1859,6 +2282,38 @@ impl<S: Scheme> Tm<S> {
             raw_typed_term: term,
         }
     }
+
+
+    /// Type constructor injectivity for the `arg_name` of pi types.
+    ///
+    /// Given the following:
+    /// * Two names: `arg_name_0` and `arg_name_1`.
+    /// * Two types: `arg_ty_0` and `arg_ty_1`.
+    /// * A type scoped under a value of type `arg_ty_0`: `res_ty_0`.
+    /// * A type scoped under a value of type `arg_ty_1`: `res_ty_1`.
+    ///
+    /// Then if self has type:
+    ///
+    /// `arg_ty_0.pi(arg_name_0, res_ty_0).to_term().equals(&arg_ty_1.pi(arg_name_1,
+    /// res_ty_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type:
+    ///
+    /// `TyKind::Pi { arg_name: arg_name_0, res_ty: res_ty_0 }`
+    ///
+    /// Equals the type:
+    ///
+    /// `TyKind::Pi { arg_name: arg_name_1, res_ty: res_ty_1 }`
+    ///
+    /// Then this method returns a term of type:
+    ///
+    /// `arg_name_0.to_term().equals(&arg_name_1.to_term())`.
+    ///
+    /// ie. A proof that `arg_name_0 == arg_name_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
 
     pub fn pi_eq_name_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
@@ -1963,6 +2418,37 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Type constructor injectivity for the `arg_ty` of pi types.
+    ///
+    /// Given the following:
+    /// * Two names: `arg_name_0` and `arg_name_1`.
+    /// * Two types: `arg_ty_0` and `arg_ty_1`.
+    /// * A type scoped under a value of type `arg_ty_0`: `res_ty_0`.
+    /// * A type scoped under a value of type `arg_ty_1`: `res_ty_1`.
+    ///
+    /// Then if self has type:
+    ///
+    /// `arg_ty_0.pi(arg_name_0, res_ty_0).to_term().equals(&arg_ty_1.pi(arg_name_1,
+    /// res_ty_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type:
+    ///
+    /// `TyKind::Pi { arg_name: arg_name_0, res_ty: res_ty_0 }`
+    ///
+    /// Equals the type:
+    ///
+    /// `TyKind::Pi { arg_name: arg_name_1, res_ty: res_ty_1 }`
+    ///
+    /// Then this method returns a term of type:
+    ///
+    /// `arg_ty_0.to_term().equals(&arg_ty_1.to_term())`.
+    ///
+    /// ie. A proof that `arg_ty_0 == arg_ty_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
+
     pub fn pi_eq_arg_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
         let ctx_len = raw_typed_term.usages.len();
@@ -2065,6 +2551,37 @@ impl<S: Scheme> Tm<S> {
             raw_typed_term: term,
         }
     }
+
+
+    /// Type constructor injectivity for the `res_ty` of pi types.
+    ///
+    /// Given the following:
+    /// * A name: `arg_name`.
+    /// * A type: `arg_ty`.
+    /// * Two types scoped under `arg_ty`: `res_ty_0` and `res_ty_1`.
+    ///
+    /// Then if self has type:
+    ///
+    /// `arg_ty.pi(arg_name, res_ty_0).to_term().equals(&arg_ty.pi(arg_name,
+    /// res_ty_1).to_term())`
+    ///
+    /// ie. `self` is a proof that the type:
+    ///
+    /// `TyKind::Pi { arg_name, res_ty: res_ty_0 }`
+    ///
+    /// Equals the type:
+    ///
+    /// `TyKind::Pi { arg_name, res_ty: res_ty_1 }`
+    ///
+    /// Then this method returns a term of type:
+    ///
+    /// `arg_ty.func(arg_name, res_ty_0).equals(&arg_ty.func(arg_name, res_ty_1))`.
+    ///
+    /// ie. A proof that `res_ty_0 == res_ty_1`.
+    ///
+    /// # Panics
+    ///
+    /// If the type of `self` does not match the above description.
 
     pub fn pi_eq_res_injective(&self) -> Tm<S> {
         let Tm { raw_ctx, raw_typed_term } = self;
@@ -2189,6 +2706,8 @@ impl<S: Scheme> Tm<S> {
         }
     }
 
+    /// Returns `Some(index)` if `self` is a term representing the variable at `index`. Otherwise
+    /// returns `None`.
     pub fn as_var(&self) -> Option<usize> {
         let raw_term = self.raw_typed_term.inner_unfiltered();
         match raw_term.weak.get_clone() {

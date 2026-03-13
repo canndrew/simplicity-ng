@@ -1,5 +1,6 @@
 use crate::priv_prelude::*;
 
+/// A stuck computation.
 #[derive_where(Clone)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Stuck<S: Scheme> {
@@ -120,6 +121,8 @@ pub enum StuckKind<S: Scheme> {
 }
 
 impl<S: Scheme> Stuck<S> {
+    /// Get the context that `self` is scoped under. Will always be non-empty since a term under
+    /// the empty context cannot be stuck on anything.
     pub fn ctx(&self) -> Ctx<S> {
         Ctx {
             raw_ctx: self.raw_ctx.clone(),
@@ -136,6 +139,7 @@ impl<S: Scheme> Stuck<S> {
         usages
     }
 
+    /// Get the type of `self`.
     pub fn ty(&self) -> Ty<S> {
         let Stuck { raw_ctx, raw_typed_stuck } = self;
         let (raw_ty, _) = raw_typed_stuck.to_parts();
@@ -145,6 +149,7 @@ impl<S: Scheme> Stuck<S> {
         }
     }
 
+    /// Converts `self` to a [Tm].
     pub fn to_term(&self) -> Tm<S> {
         let Stuck { raw_ctx, raw_typed_stuck } = self;
         let (raw_ty, raw_stuck) = raw_typed_stuck.to_parts();
@@ -156,6 +161,11 @@ impl<S: Scheme> Stuck<S> {
         }
     }
 
+    /// Converts `self` to a [Ty], assuming the type of `self` is [TyKind::Universe].
+    ///
+    /// # Panics
+    ///
+    /// If `self.ty()` is not [TyKind::Universe].
     pub fn to_ty(&self) -> Ty<S> {
         let Stuck { raw_ctx, raw_typed_stuck } = self;
         let (raw_ty, raw_stuck) = raw_typed_stuck.to_parts();
@@ -169,7 +179,11 @@ impl<S: Scheme> Stuck<S> {
         }
     }
 
-
+    /// Converts `self` to a [Name], assuming the type of `self` is [TyKind::Name].
+    ///
+    /// # Panics
+    ///
+    /// If `self.ty()` is not [TyKind::Name].
     pub fn to_name(&self) -> Name<S> {
         let Stuck { raw_ctx, raw_typed_stuck } = self;
         let (raw_ty, raw_stuck) = raw_typed_stuck.to_parts();
@@ -183,6 +197,7 @@ impl<S: Scheme> Stuck<S> {
         }
     }
 
+    /// Get the [StuckKind] representation of `self` for pattern-matching on.
     pub fn kind(&self) -> StuckKind<S> {
         let ctx_len = self.raw_typed_stuck.usages.len();
         let Stuck { raw_ctx, raw_typed_stuck } = self;
@@ -822,10 +837,13 @@ impl<S: Scheme> Stuck<S> {
         }
     }
 
+    /// Checks whether `self` refers to the variable at `index`.
     pub fn contains_var(&self, index: usize) -> bool {
         self.raw_typed_stuck.usages[index]
     }
 
+    /// Returns the index of the variable represented by `self` if the kind of `self` is
+    /// [StuckKind::Var]. Otherwise returns `None`.
     pub fn as_var(&self) -> Option<usize> {
         self.raw_typed_stuck.inner_unfiltered().as_var()
     }

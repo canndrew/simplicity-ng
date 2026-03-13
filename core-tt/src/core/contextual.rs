@@ -1,5 +1,50 @@
 use crate::priv_prelude::*;
 
+/// A trait for types that can be stored under a [Scope].
+///
+/// # Deriving
+///
+/// This trait can be derived. You must the `#[scheme]` attribute to specify the [Scheme]. All
+/// fields of the type must implement [Contextual]. You can use [NonContextual] to wrap arbitrary
+/// data to be placed inside a type implementing [Contextual].
+///
+/// # Examples
+///
+/// Define a [Contextual] type which can be used with any [Scheme].
+///
+/// ```
+/// # use core_tt::{Scheme, Contextual, NonContextual};
+/// #[derive(Contextual)]
+/// #[scheme(S)]
+/// struct MyGenericType<S: Scheme> {
+///     stuff: NonContextual<S, u32>,
+/// }
+/// ```
+///
+/// Define a [Contextual] type to be used with a specific [Scheme].
+///
+/// ```
+/// # #![recursion_limit = "300"]
+/// # use {
+/// #     core_tt::{Scheme, Interner, Contextual, NonContextual},
+/// #     lazy_static::lazy_static,
+/// # };
+/// # enum MyScheme {}
+/// # impl Scheme for MyScheme {
+/// #     type Tag = ();
+/// #     fn interner() -> &'static Interner<MyScheme> {
+/// #         lazy_static! {
+/// #             static ref INTERNER: Interner<MyScheme> = Interner::new();
+/// #         }
+/// #         &*INTERNER
+/// #     }
+/// # }
+/// #[derive(Contextual)]
+/// #[scheme(MyScheme)]
+/// struct MyType {
+///     stuff: NonContextual<MyScheme, u32>,
+/// }
+/// ```
 pub trait Contextual<S: Scheme> {
     type Raw: Substitute<S, RawSubstOutput = Self::Raw> + Clone + PartialEq + fmt::Debug;
 

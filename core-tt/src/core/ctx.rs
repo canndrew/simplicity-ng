@@ -1,6 +1,6 @@
 use crate::priv_prelude::*;
 
-/// A context is an ordered sequence of variable bindings. Each type of each variable can depend on
+/// A context is an ordered sequence of variable bindings. The type of each variable can depend on
 /// all the preceding variables.
 #[derive_where(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
@@ -9,7 +9,7 @@ pub struct Ctx<S: Scheme> {
 }
 
 impl<S: Scheme> Ctx<S> {
-    /// Get the root context which contains no variable bindings.
+    /// Get the root/empty context containing no variable bindings.
     pub fn root() -> Ctx<S> {
         Ctx {
             raw_ctx: RawCtx::root(),
@@ -26,8 +26,9 @@ impl<S: Scheme> Ctx<S> {
         self.raw_ctx.len()
     }
 
-    /// Try to pop the inner-most variable binding from the context, returning its type.
-    /// You can get the popped context by calling the `ctx` method on the returned type.
+    /// Pop the inner-most variable binding from the context, returning its type. You can get the
+    /// popped context (ie. minus the inner-most variable) by calling [Ty::ctx] on the returned
+    /// [Ty]. Returns `None` if the context is empty.
     pub fn pop(&self) -> Option<Ty<S>> {
         let cons = self.raw_ctx.cons_opt.as_ref()?;
         let RawCtxCons { parent, var_ty } = &**cons;
@@ -45,6 +46,7 @@ impl<S: Scheme> Ctx<S> {
         Ctx { raw_ctx }
     }
 
+    /// Execute `func` under a context with `NUM_NAMES` name variables.
     pub fn with_names<const NUM_NAMES: usize, T>(
         &self,
         func: impl FnOnce([Name<S>; NUM_NAMES]) -> T,
@@ -110,9 +112,8 @@ impl<S: Scheme> Ctx<S> {
     ///
     /// # Panics
     ///
-    /// If the contexts have diverged, meaning that there are two contexts which each contain
+    /// If the contexts have diverged, meaning that there are two contexts where each contain
     /// variables that the other doesn't.
-    ///
     pub fn into_common_ctx<Ts: BundleOfContextual<S>>(bundle_of_contextual: Ts) -> Ts::Output {
         BundleOfContextual::into_common_ctx(bundle_of_contextual)
     }
@@ -127,6 +128,7 @@ impl<S: Scheme> Ctx<S> {
     }
     */
 
+    /// Get the [TyKind::Name] type, scoped under `self`.
     pub fn name(&self) -> Ty<S> {
         Ty {
             raw_ctx: self.raw_ctx.clone(),
@@ -134,6 +136,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Convert `tag` into a [Name] scoped under `self`.
     pub fn tag(&self, tag: &S::Tag) -> Name<S> {
         Name {
             raw_ctx: self.raw_ctx.clone(),
@@ -141,6 +144,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Get the [TyKind::Universe] type, scoped under `self`.
     pub fn universe(&self) -> Ty<S> {
         Ty {
             raw_ctx: self.raw_ctx.clone(),
@@ -148,6 +152,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Get the [TyKind::Nat] type, scoped under `self`.
     pub fn nat(&self) -> Ty<S> {
         Ty {
             raw_ctx: self.raw_ctx.clone(),
@@ -155,6 +160,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Create the zero value of type [TyKind::Nat] scoped under `self`.
     pub fn zero(&self) -> Tm<S> {
         Tm {
             raw_ctx: self.raw_ctx.clone(),
@@ -162,6 +168,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Create a constant value of type [TyKind::Nat] scoped under `self`.
     pub fn nat_constant(&self, val: impl Into<BigUint>) -> Tm<S> {
         Tm {
             raw_ctx: self.raw_ctx.clone(),
@@ -172,6 +179,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Get the [TyKind::Never] type, scoped under `self`.
     pub fn never(&self) -> Ty<S> {
         Ty {
             raw_ctx: self.raw_ctx.clone(),
@@ -179,6 +187,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Get the [TyKind::Unit] type, scoped under `self`.
     pub fn unit_ty(&self) -> Ty<S> {
         Ty {
             raw_ctx: self.raw_ctx.clone(),
@@ -186,6 +195,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Get the [TmKind::Unit] term, scoped under `self`.
     pub fn unit_term(&self) -> Tm<S> {
         Tm {
             raw_ctx: self.raw_ctx.clone(),
@@ -193,6 +203,7 @@ impl<S: Scheme> Ctx<S> {
         }
     }
 
+    /// Convert val into a [`NonContextual<T>`] scoped under `self`.
     pub fn non_contextual<T>(&self, val: T) -> NonContextual<S, T> {
         NonContextual {
             raw_ctx: self.raw_ctx.clone(),

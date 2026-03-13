@@ -1,5 +1,6 @@
 use crate::priv_prelude::*;
 
+/// The type for representing types.
 #[derive_where(Clone)]
 #[cfg_attr(not(feature = "pretty-formatting"), derive_where(Debug))]
 pub struct Ty<S: Scheme> {
@@ -74,6 +75,7 @@ impl<S: Scheme> Contextual<S> for Ty<S> {
 }
 
 impl<S: Scheme> Ty<S> {
+    /// Returns the context of `self`.
     pub fn ctx(&self) -> Ctx<S> {
         Ctx {
             raw_ctx: self.raw_ctx.clone(),
@@ -90,10 +92,15 @@ impl<S: Scheme> Ty<S> {
         usages
     }
 
+    /// Returns the context of `self` extended with a single variable of type `self`.
     pub fn cons(&self) -> Ctx<S> {
         self.ctx().cons(self)
     }
 
+    /// Evaluates `func` under the context of `self` extended with a single variable of type
+    /// `self`.
+    ///
+    /// The term passed to `func` is the variable of type `self`.
     pub fn with_cons<T>(&self, func: impl FnOnce(Tm<S>) -> T) -> T {
         let ctx_len = self.raw_ctx.len();
         let raw_typed_term = RawTyped::from_parts(
@@ -107,10 +114,16 @@ impl<S: Scheme> Ty<S> {
         func(var_term)
     }
 
+    /// Checks whether `self` refers to the variable at index `index`.
     pub fn contains_var(&self, index: usize) -> bool {
         self.raw_ty.usages[index]
     }
 
+    /// Returns a scoped type, assuming self is a [TyKind::Pi] type.
+    ///
+    /// # Panics
+    ///
+    /// If `self` is not of the form [TyKind::Pi].
     pub fn to_scope(&self) -> Scope<S, Ty<S>> {
         let Ty { raw_ctx, raw_ty } = self;
         let RawTyKind::Pi { arg_name: _, res_ty } = raw_ty.weak.get_clone() else {
@@ -207,6 +220,8 @@ impl<S: Scheme> Ty<S> {
         }
     }
 
+    /// Returns the [TyKind::Sum] type with `self` as the left type and the given name and right
+    /// type.
     pub fn sum(
         &self,
         lhs_name: &Name<S>,
@@ -218,6 +233,8 @@ impl<S: Scheme> Ty<S> {
         Ty { raw_ctx, raw_ty }
     }
 
+    /// Returns the [TyKind::Sigma] type with `self` as the head type and the given name and tail
+    /// type.
     pub fn sigma(
         &self,
         head_name: &Name<S>,
@@ -231,6 +248,8 @@ impl<S: Scheme> Ty<S> {
         Ty { raw_ctx, raw_ty }
     }
 
+    /// Returns the [TyKind::Pi] type with `self` as the argument type and the given argument name
+    /// and result type.
     pub fn pi(
         &self,
         arg_name: &Name<S>,
@@ -244,6 +263,7 @@ impl<S: Scheme> Ty<S> {
         Ty { raw_ctx, raw_ty }
     }
 
+    /// Returns a function (ie. a term of type [TyKind::Pi]) with `self` as the argument type.
     pub fn func(
         &self,
         arg_name: &Name<S>,
