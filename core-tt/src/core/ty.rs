@@ -294,19 +294,20 @@ impl<S: Scheme> Ty<S> {
     pub fn try_scope<Y>(
         &self,
         func: impl FnOnce(Tm<S>) -> Y,
-    ) -> <Y::Residual as Residual<Scope<S, Y::Output>>>::TryType
+    ) -> Y::AltOutput<Scope<S, Y::Output>>
     where
-        Y: Try,
+        Y: MyTry,
         Y::Output: Contextual<S>,
-        Y::Residual: Residual<Scope<S, Y::Output>>,
-        Y::Residual: Residual<RawScope<S, <Y::Output as Contextual<S>>::Raw>>,
     {
-        let raw_scope = try_raw_scope(&self.raw_ctx, &self.raw_ty, func)?;
+        let raw_scope = match try_raw_scope(&self.raw_ctx, &self.raw_ty, func).branch() {
+            ControlFlow::Continue(rs) => rs,
+            ControlFlow::Break(err) => return Y::AltOutput::from_residual(err),
+        };
         let scope = Scope {
             raw_ctx: self.raw_ctx.clone(),
             raw_scope,
         };
-        <<Y::Residual as Residual<Scope<S, Y::Output>>>::TryType as Try>::from_output(scope)
+        Y::AltOutput::from_output(scope)
     }
 
     pub fn to_term(&self) -> Tm<S> {

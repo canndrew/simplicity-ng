@@ -1,8 +1,10 @@
+pub(crate) use crate::MyTry;
+
 pub(crate) use {
     std::{
         cmp, fmt, hash, iter, ops, mem,
         marker::PhantomData,
-        ops::{ControlFlow, Try, FromResidual, Residual},
+        ops::ControlFlow,
         sync::{Arc, RwLock},
         num::NonZero,
     },
