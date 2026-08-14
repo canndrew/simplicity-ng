@@ -3,6 +3,8 @@ use std::{
     ptr::NonNull,
 };
 
+use crate::unchecked_disjoint_bitor;
+
 /* 
  * FIXME: A lot of code here is stupidly inefficient just because it was the
  * quickest/easiest/safest way to write it. If you're looking for things to optimize, start here.
@@ -496,7 +498,7 @@ impl SmallBitVec {
             let mask_mask = (!0usize).unbounded_shl(unsafe {
                 u32::try_from(mask_len).unwrap_unchecked()
             });
-            let mask = unsafe { mask_word.unchecked_disjoint_bitor(mask_mask) };
+            let mask = unsafe { unchecked_disjoint_bitor(mask_word, mask_mask) };
             self.storage.inline = crate::bmi2::pext(inline, mask);
             self.capacity_or_inline_len = {
                 mask_bits(mask, self.capacity_or_inline_len).count_ones() as usize
@@ -518,9 +520,7 @@ impl SmallBitVec {
                         let mask_mask = {
                             (!0usize).unchecked_shl(u32::try_from(shift).unwrap_unchecked())
                         };
-                        let mask_word = {
-                            mask_word.unchecked_disjoint_bitor(mask_mask)
-                        };
+                        let mask_word = unchecked_disjoint_bitor(mask_word, mask_mask);
                         *word = crate::bmi2::pext(*word, mask_word);
                     }
 
@@ -539,7 +539,7 @@ impl SmallBitVec {
                         };
                         {
                             let write_word = vec.get_unchecked_mut(1 + write_word_index);
-                            *write_word = write_word.unchecked_disjoint_bitor(lower_word);
+                            *write_word = unchecked_disjoint_bitor(*write_word, lower_word);
                         }
                         let written_len = USIZE_BITS.unchecked_sub(write_bit_index);
                         if written_len < chunk_len {
@@ -558,9 +558,7 @@ impl SmallBitVec {
                         let mask_mask = {
                             (!0usize).unchecked_shl(u32::try_from(shift).unwrap_unchecked())
                         };
-                        let mask_word = {
-                            mask_word.unchecked_disjoint_bitor(mask_mask)
-                        };
+                        let mask_word = unchecked_disjoint_bitor(mask_word, mask_mask);
                         let chunk_len = mask_word.count_ones() as usize;
 
                         let (write_word_index, write_bit_index) = div_mod(
@@ -571,7 +569,7 @@ impl SmallBitVec {
                         };
                         {
                             let write_word = vec.get_unchecked_mut(1 + write_word_index);
-                            *write_word = write_word.unchecked_disjoint_bitor(lower_word);
+                            *write_word = unchecked_disjoint_bitor(*write_word, lower_word);
                         }
                         let written_len = USIZE_BITS.unchecked_sub(write_bit_index);
                         if written_len < chunk_len {
@@ -613,7 +611,7 @@ impl SmallBitVec {
                                     let write_word = vec.get_unchecked_mut(
                                         1 + write_word_index + offset,
                                     );
-                                    *write_word = write_word.unchecked_disjoint_bitor(lower_word);
+                                    *write_word = unchecked_disjoint_bitor(*write_word, lower_word);
                                 }
                                 let upper_word = {
                                     word.unchecked_shr(

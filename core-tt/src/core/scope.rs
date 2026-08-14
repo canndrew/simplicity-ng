@@ -174,11 +174,10 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
     pub fn try_map<Y>(
         &self,
         func: impl FnOnce(Tm<S>, T) -> Y,
-    ) -> <Y::Residual as Residual<Scope<S, Y::Output>>>::TryType
+    ) -> Y::AltOutput<Scope<S, Y::Output>>
     where
-        Y: Try,
+        Y: MyTry,
         Y::Output: Contextual<S>,
-        Y::Residual: Residual<Scope<S, Y::Output>>,
     {
         let ctx_len = self.raw_scope.usages.len();
         let (inner, raw_ty) = self.raw_scope.clone().into_inner();
@@ -195,9 +194,7 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
         let inner = T::from_raw(ctx.clone(), inner);
         let inner_res = func(var_term, inner);
         match inner_res.branch() {
-            ControlFlow::Break(err) => {
-                <<Y::Residual as Residual<Scope<S, Y::Output>>>::TryType as FromResidual>::from_residual(err)
-            },
+            ControlFlow::Break(err) => Y::AltOutput::from_residual(err),
             ControlFlow::Continue(inner) => {
                 let scope = {
                     let (new_ctx, inner) = inner.into_raw();
@@ -212,7 +209,7 @@ impl<S: Scheme, T: Contextual<S>> Scope<S, T> {
                         raw_scope,
                     }
                 };
-                <<Y::Residual as Residual<Scope<S, Y::Output>>>::TryType as Try>::from_output(scope)
+                Y::AltOutput::from_output(scope)
             },
         }
     }

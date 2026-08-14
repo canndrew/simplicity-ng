@@ -1,3 +1,5 @@
+use core::convert::Infallible;
+
 use crate::priv_prelude::*;
 
 pub trait Scheme: Sized + 'static {
@@ -5,12 +7,12 @@ pub trait Scheme: Sized + 'static {
     fn interner() -> &'static Interner<Self>;
 }
 
-impl Scheme for ! {
-    type Tag = !;
+impl Scheme for Infallible {
+    type Tag = Infallible;
 
-    fn interner() -> &'static Interner<!> {
+    fn interner() -> &'static Interner<Infallible> {
         lazy_static! {
-            static ref NEVER_INTERNER: Interner<!> = Interner::new();
+            static ref NEVER_INTERNER: Interner<Infallible> = Interner::new();
         }
         &*NEVER_INTERNER
     }

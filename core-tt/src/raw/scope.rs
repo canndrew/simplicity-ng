@@ -277,11 +277,10 @@ pub fn try_raw_scope<S: Scheme, Y>(
     raw_ctx: &RawCtx<S>,
     var_ty: &RawTy<S>,
     func: impl FnOnce(Tm<S>) -> Y,
-) -> <Y::Residual as Residual<RawScope<S, <Y::Output as Contextual<S>>::Raw>>>::TryType
+) -> Y::AltOutput<RawScope<S, <Y::Output as Contextual<S>>::Raw>>
 where
-    Y: Try,
+    Y: MyTry,
     Y::Output: Contextual<S>,
-    Y::Residual: Residual<RawScope<S, <Y::Output as Contextual<S>>::Raw>>,
 {
     let ctx_len = var_ty.usages.len();
     let raw_ctx = raw_ctx.cons(var_ty.clone());
@@ -296,13 +295,7 @@ where
     };
     let inner_res = func(var_term);
     match inner_res.branch() {
-        ControlFlow::Break(err) => {
-            <
-                <
-                    Y::Residual as Residual<RawScope<S, <Y::Output as Contextual<S>>::Raw>>
-                >::TryType as FromResidual
-            >::from_residual(err)
-        },
+        ControlFlow::Break(err) => Y::AltOutput::from_residual(err),
         ControlFlow::Continue(inner) => {
             let raw_scope = {
                 let (inner_ctx, inner) = inner.into_raw();
@@ -311,11 +304,7 @@ where
                 let inner = inner.weaken(diff);
                 RawScope::new(var_ty.clone(), inner)
             };
-            <
-                <
-                    Y::Residual as Residual<RawScope<S, <Y::Output as Contextual<S>>::Raw>>
-                >::TryType as Try
-            >::from_output(raw_scope)
+            Y::AltOutput::from_output(raw_scope)
         },
     }
 }

@@ -1,8 +1,9 @@
+use core::convert::Infallible;
 use crate::priv_prelude::*;
 
 #[test]
 fn ty_to_term_to_ty() {
-    let ctx: Ctx<!> = Ctx::root();
+    let ctx: Ctx<Infallible> = Ctx::root();
     
     ctx
     .universe()
@@ -16,7 +17,7 @@ fn ty_to_term_to_ty() {
 
 #[test]
 fn cong_beta() {
-    let ctx: Ctx<!> = Ctx::root();
+    let ctx: Ctx<Infallible> = Ctx::root();
 
     ctx
     .with_names(|[eq_name_0, eq_name_1, elim_name, eq_name]| {
@@ -86,7 +87,7 @@ fn cong_beta() {
 
 #[test]
 fn unique_identity_beta() {
-    let ctx: Ctx<!> = Ctx::root();
+    let ctx: Ctx<Infallible> = Ctx::root();
 
     ctx
     .with_names(|[eq_name, elim_name]| {
@@ -149,7 +150,7 @@ fn unique_identity_beta() {
 
 #[test]
 fn unit_eta() {
-    let ctx: Ctx<!> = Ctx::root();
+    let ctx: Ctx<Infallible> = Ctx::root();
     ctx
     .unit_ty()
     .with_cons(|unit_term| {
@@ -160,7 +161,7 @@ fn unit_eta() {
 
 #[test]
 fn case_beta() {
-    let ctx: Ctx<!> = Ctx::root();
+    let ctx: Ctx<Infallible> = Ctx::root();
 
     ctx
     .with_names(|[lhs_name, elim_name, lhs_elim_name, rhs_elim_name]| {
@@ -245,7 +246,7 @@ fn case_beta() {
 
 #[test]
 fn proj_beta() {
-    let ctx: Ctx<!> = Ctx::root();
+    let ctx: Ctx<Infallible> = Ctx::root();
     
     ctx
     .name()
@@ -291,7 +292,7 @@ fn proj_beta() {
 
 #[test]
 fn pair_eta() {
-    let ctx: Ctx<!> = Ctx::root();
+    let ctx: Ctx<Infallible> = Ctx::root();
 
     ctx
     .name()
@@ -398,7 +399,7 @@ fn pair_eta() {
 
 #[test]
 fn func_eta() {
-    let ctx: Ctx<!> = Ctx::root();
+    let ctx: Ctx<Infallible> = Ctx::root();
 
     ctx
     .with_names(|[arg_name]| {

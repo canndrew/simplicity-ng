@@ -1,5 +1,3 @@
-#![feature(never_type)]
-
 mod priv_prelude;
 pub mod ast;
 mod parser;

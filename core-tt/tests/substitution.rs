@@ -1,7 +1,7 @@
-#![feature(never_type)]
+use core::convert::Infallible;
 
-type Ctx = core_tt::Ctx<!>;
-type Tm = core_tt::Tm<!>;
+type Ctx = core_tt::Ctx<Infallible>;
+type Tm = core_tt::Tm<Infallible>;
 
 #[test]
 fn subst_zero() {
