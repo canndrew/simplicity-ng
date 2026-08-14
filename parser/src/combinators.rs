@@ -1,3 +1,5 @@
+use core::convert::Infallible;
+
 use crate::priv_prelude::*;
 
 pub fn parse_to_completion<T, E: From<UnexpectedTokenError>>(
@@ -52,10 +54,10 @@ macro_rules! impl_any_of_inner (
 );
 
 impl Parser for AnyOf<()> {
-    type Output = !;
-    type Error = !;
+    type Output = Infallible;
+    type Error = Infallible;
 
-    fn parse(&self, _tokens: &TokensRef<'_>) -> Result<Option<(usize, !)>, !> {
+    fn parse(&self, _tokens: &TokensRef<'_>) -> Result<Option<(usize, Infallible)>, Infallible> {
         Ok(None)
     }
 }
@@ -103,9 +105,9 @@ macro_rules! impl_all_of_inner (
 
 impl Parser for AllOf<()> {
     type Output = ();
-    type Error = !;
+    type Error = Infallible;
 
-    fn parse(&self, _tokens: &TokensRef<'_>) -> Result<Option<(usize, ())>, !> {
+    fn parse(&self, _tokens: &TokensRef<'_>) -> Result<Option<(usize, ())>, Infallible> {
         Ok(Some((0, ())))
     }
 }
