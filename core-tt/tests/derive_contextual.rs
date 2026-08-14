@@ -1,5 +1,5 @@
-#![feature(never_type)]
 
+use core::convert::Infallible;
 use {
     derive_where::derive_where,
     core_tt::{Contextual, Scheme, Ctx, Tm},
@@ -19,7 +19,7 @@ pub struct OneField<S: Scheme> {
 
 #[test]
 fn one_field_consistent() {
-    let ctx = arbitrary_ctx::<!>();
+    let ctx = arbitrary_ctx::<Infallible>();
     let val = OneField {
         term: ctx.nat_constant(3u32),
     };
@@ -43,7 +43,7 @@ pub struct TwoFields<S: Scheme> {
 
 #[test]
 fn two_fields_consistent() {
-    let ctx = arbitrary_ctx::<!>();
+    let ctx = arbitrary_ctx::<Infallible>();
     let val = TwoFields {
         term_0: ctx.nat_constant(3u32),
         term_1: ctx.nat_constant(5u32),
@@ -68,7 +68,7 @@ pub struct TwoFieldsTuple<S: Scheme>(
 
 #[test]
 fn two_fields_tuple_consistent() {
-    let ctx = arbitrary_ctx::<!>();
+    let ctx = arbitrary_ctx::<Infallible>();
     let val = TwoFieldsTuple(
         ctx.nat_constant(3u32),
         ctx.nat_constant(5u32),
@@ -94,7 +94,7 @@ pub enum OneVariant<S: Scheme> {
 
 #[test]
 fn one_variant_consistent() {
-    let ctx = arbitrary_ctx::<!>();
+    let ctx = arbitrary_ctx::<Infallible>();
     let val = OneVariant::V0 {
         term: ctx.nat_constant(3u32),
     };
@@ -123,7 +123,7 @@ pub enum TwoVariants<S: Scheme> {
 
 #[test]
 fn two_variants_consistent() {
-    let ctx = arbitrary_ctx::<!>();
+    let ctx = arbitrary_ctx::<Infallible>();
     let val = TwoVariants::V1(
         ctx.nat_constant(3u32),
     );

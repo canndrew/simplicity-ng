@@ -1,4 +1,4 @@
-#![feature(never_type)]
+use core::convert::Infallible;
 
 //use core_tt::{assert_let, Contextual};
 use core_tt::Contextual;
@@ -9,10 +9,10 @@ macro_rules! assert_let (
     };
 );
 
-type Ctx = core_tt::Ctx<!>;
-type TmKind = core_tt::TmKind<!>;
-type TyKind = core_tt::TyKind<!>;
-//type StuckKind = core_tt::StuckKind<!>;
+type Ctx = core_tt::Ctx<Infallible>;
+type TmKind = core_tt::TmKind<Infallible>;
+type TyKind = core_tt::TyKind<Infallible>;
+//type StuckKind = core_tt::StuckKind<Infallible>;
 
 #[test]
 fn eta_unit() {
