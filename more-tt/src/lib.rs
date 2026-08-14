@@ -1,5 +1,4 @@
 #![recursion_limit = "300"]
-#![feature(never_type)]
 
 mod priv_prelude;
 
